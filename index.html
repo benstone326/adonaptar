@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Adónaptár 2026</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1E3A5F">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Adónaptár">
+  <link rel="apple-touch-icon" href="icon-192.svg">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      background: #F8F8F9;
+      color: #18181B;
+      min-height: 100vh;
+      padding-bottom: 64px;
+    }
+    .header {
+      background: linear-gradient(135deg, #1E3A5F 0%, #162D4A 100%);
+      padding: 48px 20px 28px;
+      color: white;
+    }
+    .header-inner {
+      max-width: 640px;
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .header-eyebrow {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      opacity: 0.45;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+    .header h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    .header-sub { font-size: 13px; opacity: 0.55; }
+    .header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+    .save-indicator {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.15);
+      color: #6EE7B7;
+      display: none;
+    }
+    .save-indicator.visible { display: block; }
+    .btn-reset {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      background: none;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .content { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+
+    /* Alerts */
+    .alerts { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .alert {
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .alert.amber { background: #FFFBEB; border: 1px solid #FDE68A; }
+    .alert.red   { background: #FEF2F2; border: 1px solid #FECACA; }
+    .alert-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700; color: white; flex-shrink: 0;
+    }
+    .alert-icon.amber { background: #F59E0B; }
+    .alert-icon.red   { background: #EF4444; }
+    .alert-icon .day  { font-size: 16px; line-height: 1; }
+    .alert-icon .mon  { opacity: 0.8; }
+    .alert-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+
+    /* Cards */
+    .card {
+      background: white;
+      border-radius: 16px;
+      border: 1px solid #E4E4E7;
+      padding: 20px;
+      margin-top: 12px;
+    }
+    .card-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #A1A1AA;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      margin-bottom: 16px;
+    }
+
+    /* Stats grid */
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .stat-box { background: #F9F9FB; border-radius: 10px; padding: 12px 14px; }
+    .stat-label { font-size: 11px; color: #A1A1AA; font-weight: 500; margin-bottom: 4px; }
+    .stat-value { font-size: 18px; font-weight: 700; }
+    .stat-value.navy  { color: #1E3A5F; }
+    .stat-value.zinc  { color: #52525B; }
+    .stat-value.amber { color: #D97706; }
+
+    .total-box {
+      background: #FEF3C7;
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .total-label { font-size: 11px; color: #92400E; font-weight: 600; margin-bottom: 3px; }
+    .total-value { font-size: 22px; font-weight: 700; color: #78350F; }
+    .total-note  { font-size: 12px; color: #92400E; text-align: right; line-height: 1.4; }
+
+    .info-box {
+      background: #EFF6FF;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #1E3A5F;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+
+    /* Progress bar */
+    .progress-row { display: flex; justify-content: space-between; font-size: 12px; color: #71717A; margin-bottom: 6px; }
+    .progress-bar { height: 6px; background: #E4E4E7; border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
+    .progress-caption { font-size: 11px; color: #A1A1AA; margin-top: 4px; }
+
+    /* Month grid */
+    .months-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .month-cell {
+      border-radius: 10px;
+      border: 1px solid #E4E4E7;
+      background: #F9F9FB;
+      padding: 10px 12px;
+    }
+    .month-cell.current {
+      border: 2px solid #F59E0B;
+      background: #FFFBEB;
+    }
+    .month-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .month-name { font-size: 12px; font-weight: 600; color: #52525B; }
+    .month-name.current-name { color: #92400E; }
+    .month-input-row { display: flex; align-items: center; gap: 4px; }
+    .month-input {
+      width: 100%;
+      border: none;
+      background: transparent;
+      font-size: 15px;
+      font-weight: 700;
+      color: #18181B;
+      outline: none;
+      font-family: inherit;
+      -moz-appearance: textfield;
+    }
+    .month-input::-webkit-outer-spin-button,
+    .month-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .month-unit { font-size: 11px; color: #A1A1AA; white-space: nowrap; }
+    .month-szja { font-size: 10px; color: #71717A; margin-top: 3px; }
+
+    /* Deadline list */
+    .deadline-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid #F4F4F5;
+    }
+    .deadline-row:last-child { border-bottom: none; }
+    .deadline-row.past { opacity: 0.4; }
+    .deadline-date { min-width: 36px; text-align: center; font-size: 13px; font-weight: 700; color: #1E3A5F; line-height: 1.2; }
+    .deadline-mon  { font-size: 10px; font-weight: 500; color: #71717A; }
+    .deadline-text { flex: 1; font-size: 13px; color: #18181B; line-height: 1.4; }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-amber { background: #FEF3C7; color: #92400E; }
+    .badge-green { background: #D1FAE5; color: #065F46; }
+    .badge-red   { background: #FEE2E2; color: #991B1B; }
+    .badge-zinc  { background: #F4F4F5; color: #52525B; }
+    .badge-navy  { background: #EFF6FF; color: #1E3A5F; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div>
+      <div class="header-eyebrow">Egyéni vállalkozó · Átalányadó · Mellékállás</div>
+      <h1>Adónaptár <span id="ev"></span></h1>
+      <div class="header-sub">Kohidi-Nagy Benjamin · Szoftverfejlesztés · 40% átalányköltség</div>
+    </div>
+    <div class="header-actions">
+      <span class="save-indicator" id="saveIndicator">✓ Mentve</span>
+      <button class="btn-reset" onclick="torles()">Törlés</button>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="alerts" id="alerts"></div>
+
+  <!-- Éves összesítő -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-label">Éves összesítő</div>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label">Bevétel</div>
+        <div class="stat-value navy" id="statBev">0 Ft</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Adóalap (60%)</div>
+        <div class="stat-value zinc" id="statAlap">0 Ft</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">SZJA (15%)</div>
+        <div class="stat-value amber" id="statSzja">0 Ft</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">HIPA (2%)</div>
+        <div class="stat-value amber" id="statHipa">0 Ft</div>
+      </div>
+    </div>
+    <div class="total-box">
+      <div>
+        <div class="total-label">Becsült összes adó</div>
+        <div class="total-value" id="statOsszes">0 Ft</div>
+      </div>
+      <div class="total-note">SZJA + HIPA<br><strong>évente egyszer rendezhető</strong></div>
+    </div>
+    <div class="info-box" id="infoBox">
+      Vidd fel a havi bevételeket alább a számítás megkezdéséhez.
+    </div>
+    <div class="progress-row">
+      <span>Átalányadó éves határ</span>
+      <span id="hatarigSzoveg" style="font-weight:600;color:#16A34A">6 719 800 Ft maradt</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width:0%;background:#10B981"></div>
+    </div>
+    <div class="progress-caption">6 719 800 Ft · 24× minimálbér (2025)</div>
+  </div>
+
+  <!-- Havi bevételek -->
+  <div class="card">
+    <div class="card-label">Havi bevételek</div>
+    <div class="months-grid" id="monthsGrid"></div>
+  </div>
+
+  <!-- Határidőnaptár -->
+  <div class="card">
+    <div class="card-label">Határidőnaptár <span id="evLabel2"></span></div>
+    <div id="deadlines"></div>
+  </div>
+</div>
+
+<script>
+const ATALANY = 0.40;
+const SZJA_R  = 0.15;
+const HIPA_R  = 0.02;
+const HATAR   = 6719800;
+const STORAGE_KEY = 'adonaptar-2026';
+
+const HOK      = ['Jan','Feb','Már','Ápr','Máj','Jún','Júl','Aug','Sze','Okt','Nov','Dec'];
+const HOK_LONG = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
+
+const HATARNAPOK = [
+  { ho:1,  nap:12, szoveg:'December havi számlaadat NAV felé (auto)' },
+  { ho:1,  nap:31, szoveg:'Előző negyedév SZJA-előleg (ha van)' },
+  { ho:3,  nap:20, szoveg:'HIPA-bevallás benyújtása (éves)' },
+  { ho:4,  nap:30, szoveg:'Q1 SZJA-előleg (ha van)' },
+  { ho:5,  nap:20, szoveg:'Éves SZJA-bevallás (eSZJA)' },
+  { ho:7,  nap:31, szoveg:'Q2 SZJA-előleg (ha van)' },
+  { ho:10, nap:31, szoveg:'Q3 SZJA-előleg (ha van)' },
+];
+
+const ev   = new Date().getFullYear();
+const maHo = new Date().getMonth();
+
+let bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
+let saveTimer = null;
+
+function fmt(n) {
+  return Math.round(n).toLocaleString('hu-HU') + ' Ft';
+}
+
+function badge(text, color) {
+  return `<span class="badge badge-${color}">${text}</span>`;
+}
+
+// --- Storage ---
+function betolt() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      bevetel = JSON.parse(raw);
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+function ment() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(bevetel));
+    const el = document.getElementById('saveIndicator');
+    el.textContent = '✓ Mentve';
+    el.classList.add('visible');
+    setTimeout(() => el.classList.remove('visible'), 2000);
+  } catch(e) {}
+}
+
+function torles() {
+  if (!confirm('Törlöd az összes bevitelt?')) return;
+  bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
+  localStorage.removeItem(STORAGE_KEY);
+  renderMonths();
+  szamol();
+}
+
+// --- Számítás ---
+function szamol() {
+  const ossz = bevetel.reduce((s,b) => s + (parseFloat(b.osszeg)||0), 0);
+  const alap = ossz * (1 - ATALANY);
+  const szja = alap * SZJA_R;
+  const hipa = ossz * HIPA_R;
+  const total = szja + hipa;
+  const pct = Math.min(100, (ossz / HATAR) * 100);
+  const maradt = Math.max(0, HATAR - ossz);
+
+  document.getElementById('statBev').textContent    = fmt(ossz);
+  document.getElementById('statAlap').textContent   = fmt(alap);
+  document.getElementById('statSzja').textContent   = fmt(szja);
+  document.getElementById('statHipa').textContent   = fmt(hipa);
+  document.getElementById('statOsszes').textContent = fmt(total);
+
+  // progress
+  const fillEl = document.getElementById('progressFill');
+  fillEl.style.width = pct + '%';
+  fillEl.style.background = pct > 80 ? '#EF4444' : pct > 60 ? '#F59E0B' : '#10B981';
+  const hatarigEl = document.getElementById('hatarigSzoveg');
+  hatarigEl.textContent = fmt(maradt) + ' maradt';
+  hatarigEl.style.color = pct > 80 ? '#DC2626' : pct > 60 ? '#D97706' : '#16A34A';
+
+  // info box
+  const infoEl = document.getElementById('infoBox');
+  if (ossz > 0) {
+    infoEl.innerHTML = `A <strong>${fmt(szja)} SZJA-t valószínűleg nem kell külön kifizetni</strong> — a főállásnál a munkáltatód már levonja. Az eSZJA-ban (máj. 20.) látod a pontos különbözetet. A <strong>${fmt(hipa)} HIPA</strong> viszont ténylegesen fizetendő (márc. 20., Győrújbarát önkormányzat).`;
+  } else {
+    infoEl.textContent = 'Vidd fel a havi bevételeket alább a számítás megkezdéséhez.';
+  }
+
+  renderAlerts();
+}
+
+// --- Hónap grid ---
+function renderMonths() {
+  const grid = document.getElementById('monthsGrid');
+  grid.innerHTML = bevetel.map(b => {
+    const ertek = parseFloat(b.osszeg) || 0;
+    const cur = b.ho === maHo;
+    const szjaHavi = ertek > 0 ? `<div class="month-szja">SZJA ~${fmt(ertek*(1-ATALANY)*SZJA_R)}</div>` : '';
+    const jel = cur
+      ? badge('aktuális','amber')
+      : ertek > 0 ? badge('✓','green') : '';
+    return `
+      <div class="month-cell ${cur ? 'current' : ''}">
+        <div class="month-header">
+          <span class="month-name ${cur ? 'current-name' : ''}">${HOK_LONG[b.ho]}</span>
+          ${jel}
+        </div>
+        <div class="month-input-row">
+          <input class="month-input" type="number" inputmode="numeric"
+            placeholder="0" value="${b.osszeg}"
+            onchange="beallitBevetel(${b.ho}, this.value)"
+            oninput="beallitBevetel(${b.ho}, this.value)">
+          <span class="month-unit">Ft</span>
+        </div>
+        ${szjaHavi}
+      </div>`;
+  }).join('');
+}
+
+function beallitBevetel(ho, ertek) {
+  bevetel = bevetel.map(b => b.ho === ho ? {...b, osszeg: ertek} : b);
+  // update just the szja hint and badge in that cell without full re-render (avoids losing focus)
+  szamol();
+  // debounced save
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(ment, 800);
+  // update badge and szja hint
+  const cells = document.querySelectorAll('.month-cell');
+  cells.forEach((cell, i) => {
+    const val = parseFloat(bevetel[i].osszeg) || 0;
+    const cur = bevetel[i].ho === maHo;
+    // badge
+    const hdr = cell.querySelector('.month-header');
+    const existingBadge = hdr.querySelector('.badge');
+    if (existingBadge) existingBadge.remove();
+    if (cur) {
+      hdr.insertAdjacentHTML('beforeend', badge('aktuális','amber'));
+    } else if (val > 0) {
+      hdr.insertAdjacentHTML('beforeend', badge('✓','green'));
+    }
+    // szja hint
+    let hint = cell.querySelector('.month-szja');
+    if (val > 0) {
+      const txt = `SZJA ~${fmt(val*(1-ATALANY)*SZJA_R)}`;
+      if (hint) { hint.textContent = txt; }
+      else { cell.insertAdjacentHTML('beforeend', `<div class="month-szja">${txt}</div>`); }
+    } else if (hint) {
+      hint.remove();
+    }
+  });
+}
+
+// --- Alerts ---
+function renderAlerts() {
+  const ma = new Date();
+  const kozelgo = HATARNAPOK
+    .map(h => {
+      const d = new Date(ev, h.ho-1, h.nap);
+      const diff = Math.ceil((d - ma) / 86400000);
+      return {...h, d, diff};
+    })
+    .filter(h => h.diff >= 0 && h.diff <= 45)
+    .sort((a,b) => a.diff - b.diff);
+
+  const el = document.getElementById('alerts');
+  el.innerHTML = kozelgo.map(h => {
+    const color = h.diff <= 7 ? 'red' : 'amber';
+    const diffSzoveg = h.diff === 0 ? 'Ma!' : `${h.diff} nap múlva`;
+    return `
+      <div class="alert ${color}">
+        <div class="alert-icon ${color}">
+          <span class="day">${h.nap}</span>
+          <span class="mon">${HOK[h.ho-1]}</span>
+        </div>
+        <div>
+          <div class="alert-title">${h.szoveg}</div>
+          ${badge(diffSzoveg, color)}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// --- Deadline list ---
+function renderDeadlines() {
+  const ma = new Date();
+  const sorted = HATARNAPOK
+    .map(h => {
+      const d = new Date(ev, h.ho-1, h.nap);
+      const diff = Math.ceil((d - ma) / 86400000);
+      return {...h, d, diff};
+    })
+    .sort((a,b) => a.d - b.d);
+
+  document.getElementById('deadlines').innerHTML = sorted.map(h => {
+    const past = h.diff < 0;
+    const jelzo = past
+      ? badge('kész','zinc')
+      : h.diff <= 14
+        ? badge(h.diff + 'n','red')
+        : badge(h.diff + 'n','navy');
+    return `
+      <div class="deadline-row ${past ? 'past' : ''}">
+        <div class="deadline-date">${h.nap}.<br><span class="deadline-mon">${HOK[h.ho-1]}</span></div>
+        <div class="deadline-text">${h.szoveg}</div>
+        ${jelzo}
+      </div>`;
+  }).join('');
+}
+
+// --- Init ---
+document.getElementById('ev').textContent = ev;
+document.getElementById('evLabel2').textContent = ev;
+betolt();
+renderMonths();
+szamol();
+renderDeadlines();
+
+// Service Worker regisztráció
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
