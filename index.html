@@ -211,6 +211,40 @@
     .badge-red   { background: #FEE2E2; color: #991B1B; }
     .badge-zinc  { background: #F4F4F5; color: #52525B; }
     .badge-navy  { background: #EFF6FF; color: #1E3A5F; }
+
+    /* CSV import */
+    .btn-csv {
+      font-size: 11px; font-weight: 600;
+      color: #1E3A5F; background: #EFF6FF;
+      border: 1px solid #BFDBFE; border-radius: 6px;
+      padding: 4px 10px; cursor: pointer; font-family: inherit;
+    }
+    .card-label-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-label-row .card-label { margin-bottom: 0; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      display: none; align-items: flex-end; justify-content: center; z-index: 100;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal {
+      background: white; border-radius: 16px 16px 0 0;
+      width: 100%; max-width: 640px; padding: 24px 20px 32px;
+      max-height: 85vh; overflow-y: auto;
+    }
+    .modal h2 { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+    .modal-sub { font-size: 12px; color: #71717A; margin-bottom: 16px; line-height: 1.5; }
+    .modal-row { display: flex; justify-content: space-between; font-size: 13px; padding: 7px 0; border-bottom: 1px solid #F4F4F5; }
+    .modal-row span:last-child { font-weight: 600; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-btn { flex: 1; padding: 11px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; border: none; }
+    .modal-btn.primary { background: #1E3A5F; color: white; }
+    .modal-btn.secondary { background: #F4F4F5; color: #52525B; }
+    .modal-btn.ghost { background: none; color: #A1A1AA; border: 1px solid #E4E4E7; }
+    .modal-err { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; font-size: 12px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; line-height: 1.5; }
+    .col-pick { font-size: 12px; margin: 10px 0; }
+    .col-pick label { display: block; color: #71717A; margin-bottom: 4px; }
+    .col-pick select { width: 100%; padding: 8px; border: 1px solid #E4E4E7; border-radius: 8px; font-family: inherit; font-size: 13px; }
+    .gdpr-note { font-size: 11px; color: #A1A1AA; margin-top: 14px; line-height: 1.5; text-align: center; }
   </style>
 </head>
 <body>
@@ -275,7 +309,11 @@
 
   <!-- Havi bevételek -->
   <div class="card">
-    <div class="card-label">Havi bevételek</div>
+    <div class="card-label-row">
+      <div class="card-label">Havi bevételek</div>
+      <button class="btn-csv" onclick="document.getElementById('csvInput').click()">⬆ CSV import</button>
+    </div>
+    <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none" onchange="csvKivalasztva(this)">
     <div class="months-grid" id="monthsGrid"></div>
   </div>
 
@@ -283,6 +321,17 @@
   <div class="card">
     <div class="card-label">Határidőnaptár <span id="evLabel2"></span></div>
     <div id="deadlines"></div>
+  </div>
+</div>
+
+<!-- CSV import modal -->
+<div class="modal-overlay" id="csvModal">
+  <div class="modal">
+    <h2>CSV import előnézet</h2>
+    <div class="modal-sub" id="csvModalSub"></div>
+    <div id="csvModalBody"></div>
+    <div class="modal-actions" id="csvModalActions"></div>
+    <div class="gdpr-note">A feldolgozás a böngésződben történik. A CSV nem kerül feltöltésre sehová.</div>
   </div>
 </div>
 
@@ -501,6 +550,218 @@ function renderDeadlines() {
         ${jelzo}
       </div>`;
   }).join('');
+}
+
+// ============================================================
+// CSV import (Számlázz.hu számlalista / összes számlaadat export)
+// Kliensoldali feldolgozás — a fájl nem kerül feltöltésre sehová.
+// ============================================================
+
+let csvParsedRows = null;   // havi aggregált tömb [12]
+let csvHeader = null;       // fejléc tömb (oszlopválasztóhoz)
+let csvRawRows = null;      // nyers sorok (oszlopválasztáshoz)
+let csvDelim = ';';
+
+function csvVanMojibake(txt) {
+  return /Ã|Å|\uFFFD/.test(txt);
+}
+
+function csvKivalasztva(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    let txt = e.target.result;
+    if (csvVanMojibake(txt)) {
+      const r2 = new FileReader();
+      r2.onload = e2 => csvFeldolgoz(e2.target.result);
+      r2.onerror = () => csvHiba('Nem sikerült beolvasni a fájlt.');
+      try { r2.readAsText(file, 'ISO-8859-2'); }
+      catch (_) { csvFeldolgoz(txt); }
+      return;
+    }
+    csvFeldolgoz(txt);
+  };
+  reader.onerror = () => csvHiba('Nem sikerült beolvasni a fájlt.');
+  reader.readAsText(file, 'UTF-8');
+}
+
+function csvSorParse(sor, delim) {
+  const out = [];
+  let cur = '', q = false;
+  for (let i = 0; i < sor.length; i++) {
+    const c = sor[i];
+    if (q) {
+      if (c === '"') {
+        if (sor[i + 1] === '"') { cur += '"'; i++; }
+        else q = false;
+      } else cur += c;
+    } else {
+      if (c === '"') q = true;
+      else if (c === delim) { out.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+function csvSzam(s) {
+  if (s == null) return NaN;
+  let t = String(s).replace(/[^\d,.\-]/g, '');
+  if (t === '') return NaN;
+  if (t.indexOf(',') > -1 && t.indexOf('.') > -1) {
+    t = t.replace(/\./g, '').replace(',', '.');
+  } else if (t.indexOf(',') > -1) {
+    t = t.replace(',', '.');
+  }
+  if ((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, '');
+  const n = parseFloat(t);
+  return isNaN(n) ? NaN : n;
+}
+
+function csvDatum(s) {
+  if (!s) return null;
+  const m = String(s).match(/(\d{4})[.\-\s]+(\d{1,2})[.\-\s]+(\d{1,2})/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function csvOszlopIndex(header, kulcsok) {
+  for (let i = 0; i < header.length; i++) {
+    const h = header[i].toLowerCase();
+    if (kulcsok.some(k => h.includes(k))) return i;
+  }
+  return -1;
+}
+
+function csvFeldolgoz(txt) {
+  txt = txt.replace(/^\uFEFF/, '');
+  const sorok = txt.split(/\r\n|\n|\r/).filter(s => s.trim() !== '');
+  if (sorok.length < 2) return csvHiba('A fájl üresnek tűnik, vagy nincs benne számlasor.');
+
+  const pv = (sorok[0].match(/;/g) || []).length;
+  const v  = (sorok[0].match(/,/g) || []).length;
+  csvDelim = pv >= v ? ';' : ',';
+
+  const header = csvSorParse(sorok[0], csvDelim);
+  const rows = sorok.slice(1).map(s => csvSorParse(s, csvDelim));
+
+  csvHeader = header;
+  csvRawRows = rows;
+
+  let dIdx = csvOszlopIndex(header, ['teljesítés', 'teljesites']);
+  if (dIdx === -1) dIdx = csvOszlopIndex(header, ['kelt', 'számla kelte', 'szamla kelte']);
+
+  let aIdx = csvOszlopIndex(header, ['bruttó', 'brutto', 'végösszeg', 'vegosszeg', 'fizetendő', 'fizetendo']);
+
+  if (dIdx === -1 || aIdx === -1) {
+    return csvOszlopValaszto(dIdx, aIdx);
+  }
+
+  csvAggregal(dIdx, aIdx);
+}
+
+function csvOszlopValaszto(dElore, aElore) {
+  const opts = csvHeader.map((h, i) => `<option value="${i}">${i + 1}. ${h || '(üres)'}</option>`).join('');
+  const body = `
+    <div class="modal-err">Nem sikerült automatikusan felismerni az oszlopokat. Válaszd ki kézzel:</div>
+    <div class="col-pick">
+      <label>Teljesítés dátuma oszlop</label>
+      <select id="csvDIdx">${opts}</select>
+    </div>
+    <div class="col-pick">
+      <label>Bruttó / végösszeg oszlop</label>
+      <select id="csvAIdx">${opts}</select>
+    </div>`;
+  document.getElementById('csvModalSub').textContent = '';
+  document.getElementById('csvModalBody').innerHTML = body;
+  if (dElore > -1) document.getElementById('csvDIdx').value = dElore;
+  if (aElore > -1) document.getElementById('csvAIdx').value = aElore;
+  document.getElementById('csvModalActions').innerHTML = `
+    <button class="modal-btn ghost" onclick="csvModalBezar()">Mégse</button>
+    <button class="modal-btn primary" onclick="csvAggregal(+document.getElementById('csvDIdx').value, +document.getElementById('csvAIdx').value)">Tovább</button>`;
+  document.getElementById('csvModal').classList.add('visible');
+}
+
+function csvAggregal(dIdx, aIdx) {
+  const havi = Array(12).fill(0);
+  let db = 0, hibas = 0, evMas = 0;
+  csvRawRows.forEach(r => {
+    const d = csvDatum(r[dIdx]);
+    const n = csvSzam(r[aIdx]);
+    if (!d || isNaN(n)) { hibas++; return; }
+    if (d.getFullYear() !== ev) { evMas++; return; }
+    havi[d.getMonth()] += n;
+    db++;
+  });
+
+  if (db === 0) {
+    return csvHiba(`Egyetlen ${ev}. évi számlasort sem sikerült feldolgozni. `
+      + (evMas ? `(${evMas} sor más évhez tartozik.) ` : '')
+      + 'Ellenőrizd, hogy a megfelelő oszlopokat választottad-e.');
+  }
+
+  csvParsedRows = havi;
+  csvElonezet(havi, db, hibas, evMas);
+}
+
+function csvElonezet(havi, db, hibas, evMas) {
+  const ossz = havi.reduce((s, x) => s + x, 0);
+  const erintett = havi.filter(x => x > 0).length;
+
+  const sorok = havi.map((x, i) =>
+    x > 0 ? `<div class="modal-row"><span>${HOK_LONG[i]}</span><span>${fmt(x)}</span></div>` : ''
+  ).join('');
+
+  document.getElementById('csvModalSub').innerHTML =
+    `<strong>${db} számla</strong> feldolgozva, ${erintett} hónapra, összesen <strong>${fmt(ossz)}</strong>.`
+    + (hibas ? `<br>${hibas} sort kihagytunk (hiányzó dátum/összeg).` : '')
+    + (evMas ? `<br>${evMas} sor más évhez tartozik, ezeket kihagytuk.` : '');
+
+  document.getElementById('csvModalBody').innerHTML = sorok || '<div class="modal-sub">Nincs megjeleníthető hónap.</div>';
+
+  document.getElementById('csvModalActions').innerHTML = `
+    <button class="modal-btn ghost" onclick="csvModalBezar()">Mégse</button>
+    <button class="modal-btn secondary" onclick="csvAlkalmaz('hozzaad')">Hozzáadás</button>
+    <button class="modal-btn primary" onclick="csvAlkalmaz('felulir')">Felülírás</button>`;
+
+  document.getElementById('csvModal').classList.add('visible');
+}
+
+function csvAlkalmaz(mod) {
+  if (!csvParsedRows) return;
+  bevetel = bevetel.map(b => {
+    const uj = csvParsedRows[b.ho];
+    const regi = parseFloat(b.osszeg) || 0;
+    let ertek;
+    if (mod === 'felulir') {
+      ertek = uj > 0 ? uj : regi;
+    } else {
+      ertek = regi + uj;
+    }
+    return { ...b, osszeg: ertek > 0 ? String(Math.round(ertek)) : '' };
+  });
+  ment();
+  renderMonths();
+  szamol();
+  csvModalBezar();
+}
+
+function csvHiba(uzenet) {
+  document.getElementById('csvModalSub').textContent = '';
+  document.getElementById('csvModalBody').innerHTML = `<div class="modal-err">${uzenet}</div>`;
+  document.getElementById('csvModalActions').innerHTML =
+    `<button class="modal-btn primary" onclick="csvModalBezar()">Bezárás</button>`;
+  document.getElementById('csvModal').classList.add('visible');
+}
+
+function csvModalBezar() {
+  document.getElementById('csvModal').classList.remove('visible');
+  csvParsedRows = null; csvHeader = null; csvRawRows = null;
 }
 
 // --- Init ---
