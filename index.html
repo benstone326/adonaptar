@@ -336,7 +336,7 @@
         <div class="total-label">Becsült összes adó</div>
         <div class="total-value" id="statOsszes">0 Ft</div>
       </div>
-      <div class="total-note">SZJA + HIPA<br><strong>évente egyszer rendezhető</strong></div>
+      <div class="total-note">SZJA + HIPA + kamarai hj.<br><strong>éves szinten</strong></div>
     </div>
 
     <!-- SZJA adómentes sáv -->
@@ -404,17 +404,19 @@ const ADO_PARAMS = {
   2025: {
     koltsegHanyad: 0.40,          // átalányköltség 2025
     szjaKulcs:     0.15,
-    hipaKulcs:     0.02,          // ELLENŐRIZNI! Győrújbarát tényleges kulcsa
+    hipaKulcs:     0.019,         // Győrújbarát 1,9% (SzámlaTárs alapján megerősítve)
     bevHatar:      6719800,       // (a régi appból; 2025-re a 10x minimálbér ~ 6 989 e Ft volt)
     mentesAlap:    1600000,       // SZJA-mentes jövedelemrész (éves minimálbér fele, közelítő 2025)
+    kamaraiHj:     5000,          // éves kamarai hozzájárulás (fix)
     hatarMegj:     '2025-ös érték'
   },
   2026: {
     koltsegHanyad: 0.45,          // 2026-tól 45%
     szjaKulcs:     0.15,
-    hipaKulcs:     0.02,          // ELLENŐRIZNI! Győrújbarát tényleges kulcsa
+    hipaKulcs:     0.019,         // Győrújbarát 1,9% (SzámlaTárs alapján megerősítve)
     bevHatar:      38736000,      // 2026: éves minimálbér 10x (általános átalányadó-határ)
     mentesAlap:    1936800,       // SZJA-mentes jövedelemrész 2026 (éves minimálbér fele)
+    kamaraiHj:     5000,          // éves kamarai hozzájárulás (fix)
     hatarMegj:     '10× éves minimálbér (2026)'
   }
 };
@@ -437,9 +439,10 @@ const HOK_LONG = ['Január','Február','Március','Április','Május','Június',
 const HATARNAPOK = [
   { ho:1,  nap:12, szoveg:'December havi számlaadat NAV felé (auto)' },
   { ho:1,  nap:31, szoveg:'Előző negyedév SZJA-előleg (ha van)' },
-  { ho:3,  nap:20, szoveg:'HIPA-bevallás benyújtása (éves)' },
+  { ho:3,  nap:15, szoveg:'HIPA-bevallás benyújtása + befizetés (éves)' },
+  { ho:3,  nap:31, szoveg:'Kamarai hozzájárulás (5 000 Ft)' },
   { ho:4,  nap:30, szoveg:'Q1 SZJA-előleg (ha van)' },
-  { ho:5,  nap:20, szoveg:'Éves SZJA-bevallás (eSZJA)' },
+  { ho:5,  nap:20, szoveg:'Éves SZJA-bevallás (eSZJA / 58-as)' },
   { ho:7,  nap:31, szoveg:'Q2 SZJA-előleg (ha van)' },
   { ho:10, nap:31, szoveg:'Q3 SZJA-előleg (ha van)' },
 ];
@@ -529,8 +532,10 @@ function szamol() {
   // SZJA: csak a mentes sáv feletti jövedelemrészre
   const adokoteles = Math.max(0, alap - p.mentesAlap);
   const szja  = adokoteles * p.szjaKulcs;
-  const hipa  = ossz * p.hipaKulcs;
-  const total = szja + hipa;
+  // HIPA alapja átalányadósnál a jövedelem (bevétel - költséghányad), nem a teljes bevétel
+  const hipa  = alap * p.hipaKulcs;
+  const kamarai = (ossz > 0 ? (p.kamaraiHj || 0) : 0);  // csak ha van tevékenység
+  const total = szja + hipa + kamarai;
 
   const pct    = Math.min(100, (ossz / p.bevHatar) * 100);
   const maradt = Math.max(0, p.bevHatar - ossz);
@@ -542,7 +547,7 @@ function szamol() {
   document.getElementById('statSzjaSub').textContent = adokoteles > 0
     ? `mentes sáv felett` : `mentes sávon belül`;
   document.getElementById('statHipa').textContent   = fmt(hipa);
-  document.getElementById('statHipaSub').textContent = `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% · ellenőrizd`;
+  document.getElementById('statHipaSub').textContent = `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% · jövedelemre`;
   document.getElementById('statOsszes').textContent = fmt(total);
 
   // SZJA mentes sáv vizualizáció (a jövedelem mennyit használt el a mentes keretből)
@@ -583,7 +588,7 @@ function szamol() {
     const szjaSzoveg = szja > 0
       ? `A becsült <strong>${fmt(szja)} SZJA</strong> az adómentes sáv feletti jövedelemre esik. Mellékállásban a főállásod munkáltatója már von SZJA-t — a pontos különbözet az eSZJA-ban (máj. 20.) látszik.`
       : `A jövedelmed az <strong>adómentes sávon belül</strong> van, így várhatóan <strong>nincs fizetendő SZJA</strong>.`;
-    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 20., Győrújbarát).`;
+    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 15., Győrújbarát). A kamarai hozzájárulás <strong>${fmt(p.kamaraiHj || 0)}</strong> (márc. 31.).`;
   } else {
     infoEl.textContent = 'Vidd fel a havi bevételeket alább a számítás megkezdéséhez.';
   }
@@ -712,9 +717,9 @@ function renderDeadlines() {
   const p = paramsForYear(ev);
   document.getElementById('footnote').innerHTML =
     `A számítás tájékoztató jellegű, ${ev}-os paraméterekkel: ${Math.round(p.koltsegHanyad*100)}% átalányköltség, `
-    + `${fmt(p.mentesAlap)} SZJA-mentes jövedelemsáv, ${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA. `
-    + `A HIPA-kulcsot és a sávos kisvállalkozói adóalap lehetőségét egyeztesd a könyvelőddel — `
-    + `a sávos módszer 12 M Ft alatti bevételnél gyakran kedvezőbb. Nem minősül adótanácsadásnak.`;
+    + `${fmt(p.mentesAlap)} SZJA-mentes jövedelemsáv, ${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA (Győrújbarát), `
+    + `${fmt(p.kamaraiHj || 0)} kamarai hozzájárulás. Mellékállású EV-ként nincs negyedéves SZJA-előleg, `
+    + `TB és SZOCHO. A sávos kisvállalkozói HIPA 12 M Ft alatti bevételnél kedvezőbb lehet — egyeztesd a könyvelőddel. Nem minősül adótanácsadásnak.`;
 }
 
 // ============================================================
