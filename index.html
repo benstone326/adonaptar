@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <title>Adónaptár 2026</title>
+  <title>Adónaptár</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#1E3A5F">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -48,6 +48,9 @@
       font-weight: 700;
       letter-spacing: -0.02em;
       margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
     .header-sub { font-size: 13px; opacity: 0.55; }
     .header-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
@@ -71,6 +74,21 @@
       cursor: pointer;
       font-family: inherit;
     }
+    /* Év-választó */
+    .year-switch {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 999px; padding: 2px;
+    }
+    .year-switch button {
+      width: 26px; height: 26px; border-radius: 999px;
+      border: none; background: rgba(255,255,255,0.15);
+      color: white; font-size: 15px; cursor: pointer; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      font-family: inherit;
+    }
+    .year-switch button:disabled { opacity: 0.3; cursor: default; }
+    .year-switch .yr { font-size: 20px; font-weight: 700; min-width: 56px; text-align: center; }
     .content { max-width: 640px; margin: 0 auto; padding: 0 16px; }
 
     /* Alerts */
@@ -84,6 +102,7 @@
     }
     .alert.amber { background: #FFFBEB; border: 1px solid #FDE68A; }
     .alert.red   { background: #FEF2F2; border: 1px solid #FECACA; }
+    .alert.blue  { background: #EFF6FF; border: 1px solid #BFDBFE; }
     .alert-icon {
       width: 40px; height: 40px; border-radius: 10px;
       display: flex; flex-direction: column;
@@ -92,9 +111,11 @@
     }
     .alert-icon.amber { background: #F59E0B; }
     .alert-icon.red   { background: #EF4444; }
+    .alert-icon.blue  { background: #3B82F6; }
     .alert-icon .day  { font-size: 16px; line-height: 1; }
     .alert-icon .mon  { opacity: 0.8; }
     .alert-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .alert-text { font-size: 12px; color: #52525B; line-height: 1.45; }
 
     /* Cards */
     .card {
@@ -121,6 +142,8 @@
     .stat-value.navy  { color: #1E3A5F; }
     .stat-value.zinc  { color: #52525B; }
     .stat-value.amber { color: #D97706; }
+    .stat-value.green { color: #059669; }
+    .stat-sub { font-size: 10px; color: #A1A1AA; margin-top: 2px; font-weight: 500; }
 
     .total-box {
       background: #FEF3C7;
@@ -144,6 +167,17 @@
       line-height: 1.6;
       margin-bottom: 14px;
     }
+
+    /* SZJA mentes sáv mini progress */
+    .band-box {
+      background: #F0FDF4; border: 1px solid #BBF7D0;
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+    }
+    .band-row { display: flex; justify-content: space-between; font-size: 12px; color: #166534; margin-bottom: 6px; font-weight: 500; }
+    .band-bar { height: 6px; background: #DCFCE7; border-radius: 999px; overflow: hidden; }
+    .band-fill { height: 100%; border-radius: 999px; background: #22C55E; transition: width 0.4s ease; }
+    .band-caption { font-size: 11px; color: #16A34A; margin-top: 6px; line-height: 1.5; }
+    .band-caption.over { color: #B45309; }
 
     /* Progress bar */
     .progress-row { display: flex; justify-content: space-between; font-size: 12px; color: #71717A; margin-bottom: 6px; }
@@ -245,6 +279,7 @@
     .col-pick label { display: block; color: #71717A; margin-bottom: 4px; }
     .col-pick select { width: 100%; padding: 8px; border: 1px solid #E4E4E7; border-radius: 8px; font-family: inherit; font-size: 13px; }
     .gdpr-note { font-size: 11px; color: #A1A1AA; margin-top: 14px; line-height: 1.5; text-align: center; }
+    .footnote { font-size: 11px; color: #A1A1AA; line-height: 1.6; margin-top: 16px; padding: 0 4px; }
   </style>
 </head>
 <body>
@@ -253,8 +288,14 @@
   <div class="header-inner">
     <div>
       <div class="header-eyebrow">Egyéni vállalkozó · Átalányadó · Mellékállás</div>
-      <h1>Adónaptár <span id="ev"></span></h1>
-      <div class="header-sub">Kohidi-Nagy Benjamin · Szoftverfejlesztés · 40% átalányköltség</div>
+      <h1>Adónaptár
+        <span class="year-switch">
+          <button id="yearPrev" onclick="valtEv(-1)">‹</button>
+          <span class="yr" id="ev">2026</span>
+          <button id="yearNext" onclick="valtEv(1)">›</button>
+        </span>
+      </h1>
+      <div class="header-sub">Kohidi-Nagy Benjamin · Szoftverfejlesztés · <span id="koltsegLabel">45%</span> átalányköltség</div>
     </div>
     <div class="header-actions">
       <span class="save-indicator" id="saveIndicator">✓ Mentve</span>
@@ -275,16 +316,19 @@
         <div class="stat-value navy" id="statBev">0 Ft</div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">Adóalap (60%)</div>
+        <div class="stat-label">Adóalap (jövedelem)</div>
         <div class="stat-value zinc" id="statAlap">0 Ft</div>
+        <div class="stat-sub" id="statAlapSub"></div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">SZJA (15%)</div>
+        <div class="stat-label">SZJA (fizetendő)</div>
         <div class="stat-value amber" id="statSzja">0 Ft</div>
+        <div class="stat-sub" id="statSzjaSub"></div>
       </div>
       <div class="stat-box">
-        <div class="stat-label">HIPA (2%)</div>
+        <div class="stat-label">HIPA</div>
         <div class="stat-value amber" id="statHipa">0 Ft</div>
+        <div class="stat-sub" id="statHipaSub"></div>
       </div>
     </div>
     <div class="total-box">
@@ -294,17 +338,28 @@
       </div>
       <div class="total-note">SZJA + HIPA<br><strong>évente egyszer rendezhető</strong></div>
     </div>
+
+    <!-- SZJA adómentes sáv -->
+    <div class="band-box" id="bandBox">
+      <div class="band-row">
+        <span>SZJA adómentes sáv</span>
+        <span id="bandRemain"></span>
+      </div>
+      <div class="band-bar"><div class="band-fill" id="bandFill" style="width:0%"></div></div>
+      <div class="band-caption" id="bandCaption"></div>
+    </div>
+
     <div class="info-box" id="infoBox">
       Vidd fel a havi bevételeket alább a számítás megkezdéséhez.
     </div>
     <div class="progress-row">
-      <span>Átalányadó éves határ</span>
-      <span id="hatarigSzoveg" style="font-weight:600;color:#16A34A">6 719 800 Ft maradt</span>
+      <span>Átalányadó éves bevételi határ</span>
+      <span id="hatarigSzoveg" style="font-weight:600;color:#16A34A"></span>
     </div>
     <div class="progress-bar">
       <div class="progress-fill" id="progressFill" style="width:0%;background:#10B981"></div>
     </div>
-    <div class="progress-caption">6 719 800 Ft · 24× minimálbér (2025)</div>
+    <div class="progress-caption" id="hatarCaption"></div>
   </div>
 
   <!-- Havi bevételek -->
@@ -322,6 +377,8 @@
     <div class="card-label">Határidőnaptár <span id="evLabel2"></span></div>
     <div id="deadlines"></div>
   </div>
+
+  <div class="footnote" id="footnote"></div>
 </div>
 
 <!-- CSV import modal -->
@@ -336,11 +393,43 @@
 </div>
 
 <script>
-const ATALANY = 0.40;
-const SZJA_R  = 0.15;
-const HIPA_R  = 0.02;
-const HATAR   = 6719800;
-const STORAGE_KEY = 'adonaptar-2026';
+// ============================================================
+// ÉVENKÉNTI ADÓPARAMÉTEREK
+// Ha egy érték megváltozik / új év jön, itt írd át.
+// FONTOS: a HIPA-kulcsot ellenőrizd a könyvelőddel / a hatályos
+// győrújbaráti rendelettel! A 2% nem volt megerősíthető –
+// a régiós rendeletek 1,9% körüli kulcsot mutatnak.
+// ============================================================
+const ADO_PARAMS = {
+  2025: {
+    koltsegHanyad: 0.40,          // átalányköltség 2025
+    szjaKulcs:     0.15,
+    hipaKulcs:     0.02,          // ELLENŐRIZNI! Győrújbarát tényleges kulcsa
+    bevHatar:      6719800,       // (a régi appból; 2025-re a 10x minimálbér ~ 6 989 e Ft volt)
+    mentesAlap:    1600000,       // SZJA-mentes jövedelemrész (éves minimálbér fele, közelítő 2025)
+    hatarMegj:     '2025-ös érték'
+  },
+  2026: {
+    koltsegHanyad: 0.45,          // 2026-tól 45%
+    szjaKulcs:     0.15,
+    hipaKulcs:     0.02,          // ELLENŐRIZNI! Győrújbarát tényleges kulcsa
+    bevHatar:      38736000,      // 2026: éves minimálbér 10x (általános átalányadó-határ)
+    mentesAlap:    1936800,       // SZJA-mentes jövedelemrész 2026 (éves minimálbér fele)
+    hatarMegj:     '10× éves minimálbér (2026)'
+  }
+};
+// Ismeretlen évhez a legutóbbi ismert paramétert használjuk:
+const ISMERT_EVEK = Object.keys(ADO_PARAMS).map(Number).sort((a,b)=>a-b);
+const MIN_EV = 2025;
+const MAX_EV = 2030;
+
+function paramsForYear(y) {
+  if (ADO_PARAMS[y]) return ADO_PARAMS[y];
+  // legközelebbi ismert év lefelé
+  let best = ISMERT_EVEK[0];
+  ISMERT_EVEK.forEach(e => { if (e <= y) best = e; });
+  return ADO_PARAMS[best];
+}
 
 const HOK      = ['Jan','Feb','Már','Ápr','Máj','Jún','Júl','Aug','Sze','Okt','Nov','Dec'];
 const HOK_LONG = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
@@ -355,11 +444,14 @@ const HATARNAPOK = [
   { ho:10, nap:31, szoveg:'Q3 SZJA-előleg (ha van)' },
 ];
 
-const ev   = new Date().getFullYear();
+const AKTUALIS_EV = new Date().getFullYear();
 const maHo = new Date().getMonth();
 
+let ev = AKTUALIS_EV;
 let bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
 let saveTimer = null;
+
+function storageKey(y) { return 'adonaptar-' + y; }
 
 function fmt(n) {
   return Math.round(n).toLocaleString('hu-HU') + ' Ft';
@@ -371,19 +463,28 @@ function badge(text, color) {
 
 // --- Storage ---
 function betolt() {
+  // egyszeri migráció: régi 'adonaptar-2026' kulcs -> új séma
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const regi = localStorage.getItem('adonaptar-2026');
+    if (regi && !localStorage.getItem(storageKey(2026))) {
+      localStorage.setItem(storageKey(2026), regi);
+    }
+  } catch(e) {}
+
+  try {
+    const raw = localStorage.getItem(storageKey(ev));
     if (raw) {
       bevetel = JSON.parse(raw);
       return true;
     }
   } catch(e) {}
+  bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
   return false;
 }
 
 function ment() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(bevetel));
+    localStorage.setItem(storageKey(ev), JSON.stringify(bevetel));
     const el = document.getElementById('saveIndicator');
     el.textContent = '✓ Mentve';
     el.classList.add('visible');
@@ -392,28 +493,80 @@ function ment() {
 }
 
 function torles() {
-  if (!confirm('Törlöd az összes bevitelt?')) return;
+  if (!confirm(`Törlöd a(z) ${ev}. évi összes bevitelt?`)) return;
   bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(storageKey(ev));
   renderMonths();
   szamol();
 }
 
+// --- Év-váltás ---
+function valtEv(delta) {
+  const uj = ev + delta;
+  if (uj < MIN_EV || uj > MAX_EV) return;
+  ev = uj;
+  betolt();
+  frissitFejlec();
+  renderMonths();
+  szamol();
+  renderDeadlines();
+}
+
+function frissitFejlec() {
+  const p = paramsForYear(ev);
+  document.getElementById('ev').textContent = ev;
+  document.getElementById('evLabel2').textContent = ev;
+  document.getElementById('koltsegLabel').textContent = Math.round(p.koltsegHanyad*100) + '%';
+  document.getElementById('yearPrev').disabled = (ev <= MIN_EV);
+  document.getElementById('yearNext').disabled = (ev >= MAX_EV);
+}
+
 // --- Számítás ---
 function szamol() {
-  const ossz = bevetel.reduce((s,b) => s + (parseFloat(b.osszeg)||0), 0);
-  const alap = ossz * (1 - ATALANY);
-  const szja = alap * SZJA_R;
-  const hipa = ossz * HIPA_R;
+  const p = paramsForYear(ev);
+  const ossz  = bevetel.reduce((s,b) => s + (parseFloat(b.osszeg)||0), 0);
+  const alap  = ossz * (1 - p.koltsegHanyad);          // átalányjövedelem
+  // SZJA: csak a mentes sáv feletti jövedelemrészre
+  const adokoteles = Math.max(0, alap - p.mentesAlap);
+  const szja  = adokoteles * p.szjaKulcs;
+  const hipa  = ossz * p.hipaKulcs;
   const total = szja + hipa;
-  const pct = Math.min(100, (ossz / HATAR) * 100);
-  const maradt = Math.max(0, HATAR - ossz);
+
+  const pct    = Math.min(100, (ossz / p.bevHatar) * 100);
+  const maradt = Math.max(0, p.bevHatar - ossz);
 
   document.getElementById('statBev').textContent    = fmt(ossz);
   document.getElementById('statAlap').textContent   = fmt(alap);
+  document.getElementById('statAlapSub').textContent = `bevétel ${Math.round((1-p.koltsegHanyad)*100)}%-a`;
   document.getElementById('statSzja').textContent   = fmt(szja);
+  document.getElementById('statSzjaSub').textContent = adokoteles > 0
+    ? `mentes sáv felett` : `mentes sávon belül`;
   document.getElementById('statHipa').textContent   = fmt(hipa);
+  document.getElementById('statHipaSub').textContent = `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% · ellenőrizd`;
   document.getElementById('statOsszes').textContent = fmt(total);
+
+  // SZJA mentes sáv vizualizáció (a jövedelem mennyit használt el a mentes keretből)
+  const bandPct = Math.min(100, (alap / p.mentesAlap) * 100);
+  const bandFillEl = document.getElementById('bandFill');
+  bandFillEl.style.width = bandPct + '%';
+  bandFillEl.style.background = alap >= p.mentesAlap ? '#F59E0B' : '#22C55E';
+  const bandRemainEl = document.getElementById('bandRemain');
+  const bandCapEl = document.getElementById('bandCaption');
+  // mennyi bevétel fér még az adómentes sávba
+  const mentesBevHatar = p.mentesAlap / (1 - p.koltsegHanyad);
+  if (alap < p.mentesAlap) {
+    const maradtAlap = p.mentesAlap - alap;
+    const maradtBev  = maradtAlap / (1 - p.koltsegHanyad);
+    bandRemainEl.textContent = fmt(maradtAlap) + ' jövedelem maradt';
+    bandRemainEl.style.fontWeight = '600';
+    bandCapEl.className = 'band-caption';
+    bandCapEl.innerHTML = `Amíg az éves bevételed <strong>${fmt(mentesBevHatar)}</strong> alatt marad, nincs fizetendő SZJA. Még kb. <strong>${fmt(maradtBev)}</strong> bevétel fér bele.`;
+  } else {
+    bandRemainEl.textContent = 'kimerítve';
+    bandRemainEl.style.fontWeight = '600';
+    bandCapEl.className = 'band-caption over';
+    bandCapEl.innerHTML = `Az adómentes sáv (${fmt(p.mentesAlap)} jövedelem ≈ ${fmt(mentesBevHatar)} bevétel) kimerült. A felette lévő részre <strong>${(p.szjaKulcs*100)}% SZJA</strong> esik.`;
+  }
 
   // progress
   const fillEl = document.getElementById('progressFill');
@@ -422,11 +575,15 @@ function szamol() {
   const hatarigEl = document.getElementById('hatarigSzoveg');
   hatarigEl.textContent = fmt(maradt) + ' maradt';
   hatarigEl.style.color = pct > 80 ? '#DC2626' : pct > 60 ? '#D97706' : '#16A34A';
+  document.getElementById('hatarCaption').textContent = `${fmt(p.bevHatar)} · ${p.hatarMegj}`;
 
   // info box
   const infoEl = document.getElementById('infoBox');
   if (ossz > 0) {
-    infoEl.innerHTML = `A <strong>${fmt(szja)} SZJA-t valószínűleg nem kell külön kifizetni</strong> — a főállásnál a munkáltatód már levonja. Az eSZJA-ban (máj. 20.) látod a pontos különbözetet. A <strong>${fmt(hipa)} HIPA</strong> viszont ténylegesen fizetendő (márc. 20., Győrújbarát önkormányzat).`;
+    const szjaSzoveg = szja > 0
+      ? `A becsült <strong>${fmt(szja)} SZJA</strong> az adómentes sáv feletti jövedelemre esik. Mellékállásban a főállásod munkáltatója már von SZJA-t — a pontos különbözet az eSZJA-ban (máj. 20.) látszik.`
+      : `A jövedelmed az <strong>adómentes sávon belül</strong> van, így várhatóan <strong>nincs fizetendő SZJA</strong>.`;
+    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 20., Győrújbarát).`;
   } else {
     infoEl.textContent = 'Vidd fel a havi bevételeket alább a számítás megkezdéséhez.';
   }
@@ -436,11 +593,14 @@ function szamol() {
 
 // --- Hónap grid ---
 function renderMonths() {
+  const p = paramsForYear(ev);
   const grid = document.getElementById('monthsGrid');
+  const evAktualis = (ev === AKTUALIS_EV);
   grid.innerHTML = bevetel.map(b => {
     const ertek = parseFloat(b.osszeg) || 0;
-    const cur = b.ho === maHo;
-    const szjaHavi = ertek > 0 ? `<div class="month-szja">SZJA ~${fmt(ertek*(1-ATALANY)*SZJA_R)}</div>` : '';
+    const cur = evAktualis && b.ho === maHo;
+    const szjaHavi = ertek > 0
+      ? `<div class="month-szja">jövedelem ~${fmt(ertek*(1-p.koltsegHanyad))}</div>` : '';
     const jel = cur
       ? badge('aktuális','amber')
       : ertek > 0 ? badge('✓','green') : '';
@@ -463,18 +623,17 @@ function renderMonths() {
 }
 
 function beallitBevetel(ho, ertek) {
+  const p = paramsForYear(ev);
   bevetel = bevetel.map(b => b.ho === ho ? {...b, osszeg: ertek} : b);
-  // update just the szja hint and badge in that cell without full re-render (avoids losing focus)
   szamol();
-  // debounced save
   clearTimeout(saveTimer);
   saveTimer = setTimeout(ment, 800);
-  // update badge and szja hint
+
+  const evAktualis = (ev === AKTUALIS_EV);
   const cells = document.querySelectorAll('.month-cell');
   cells.forEach((cell, i) => {
     const val = parseFloat(bevetel[i].osszeg) || 0;
-    const cur = bevetel[i].ho === maHo;
-    // badge
+    const cur = evAktualis && bevetel[i].ho === maHo;
     const hdr = cell.querySelector('.month-header');
     const existingBadge = hdr.querySelector('.badge');
     if (existingBadge) existingBadge.remove();
@@ -483,10 +642,9 @@ function beallitBevetel(ho, ertek) {
     } else if (val > 0) {
       hdr.insertAdjacentHTML('beforeend', badge('✓','green'));
     }
-    // szja hint
     let hint = cell.querySelector('.month-szja');
     if (val > 0) {
-      const txt = `SZJA ~${fmt(val*(1-ATALANY)*SZJA_R)}`;
+      const txt = `jövedelem ~${fmt(val*(1-p.koltsegHanyad))}`;
       if (hint) { hint.textContent = txt; }
       else { cell.insertAdjacentHTML('beforeend', `<div class="month-szja">${txt}</div>`); }
     } else if (hint) {
@@ -539,7 +697,7 @@ function renderDeadlines() {
   document.getElementById('deadlines').innerHTML = sorted.map(h => {
     const past = h.diff < 0;
     const jelzo = past
-      ? badge('kész','zinc')
+      ? badge('elmúlt','zinc')
       : h.diff <= 14
         ? badge(h.diff + 'n','red')
         : badge(h.diff + 'n','navy');
@@ -550,6 +708,13 @@ function renderDeadlines() {
         ${jelzo}
       </div>`;
   }).join('');
+
+  const p = paramsForYear(ev);
+  document.getElementById('footnote').innerHTML =
+    `A számítás tájékoztató jellegű, ${ev}-os paraméterekkel: ${Math.round(p.koltsegHanyad*100)}% átalányköltség, `
+    + `${fmt(p.mentesAlap)} SZJA-mentes jövedelemsáv, ${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA. `
+    + `A HIPA-kulcsot és a sávos kisvállalkozói adóalap lehetőségét egyeztesd a könyvelőddel — `
+    + `a sávos módszer 12 M Ft alatti bevételnél gyakran kedvezőbb. Nem minősül adótanácsadásnak.`;
 }
 
 // ============================================================
@@ -557,9 +722,9 @@ function renderDeadlines() {
 // Kliensoldali feldolgozás — a fájl nem kerül feltöltésre sehová.
 // ============================================================
 
-let csvParsedRows = null;   // havi aggregált tömb [12]
-let csvHeader = null;       // fejléc tömb (oszlopválasztóhoz)
-let csvRawRows = null;      // nyers sorok (oszlopválasztáshoz)
+let csvParsedRows = null;
+let csvHeader = null;
+let csvRawRows = null;
 let csvDelim = ';';
 
 function csvVanMojibake(txt) {
@@ -701,7 +866,7 @@ function csvAggregal(dIdx, aIdx) {
 
   if (db === 0) {
     return csvHiba(`Egyetlen ${ev}. évi számlasort sem sikerült feldolgozni. `
-      + (evMas ? `(${evMas} sor más évhez tartozik.) ` : '')
+      + (evMas ? `(${evMas} sor más évhez tartozik. Válts évet a fejlécben, ha másik évet importálnál.) ` : '')
       + 'Ellenőrizd, hogy a megfelelő oszlopokat választottad-e.');
   }
 
@@ -718,7 +883,7 @@ function csvElonezet(havi, db, hibas, evMas) {
   ).join('');
 
   document.getElementById('csvModalSub').innerHTML =
-    `<strong>${db} számla</strong> feldolgozva, ${erintett} hónapra, összesen <strong>${fmt(ossz)}</strong>.`
+    `<strong>${db} számla</strong> feldolgozva (${ev}), ${erintett} hónapra, összesen <strong>${fmt(ossz)}</strong>.`
     + (hibas ? `<br>${hibas} sort kihagytunk (hiányzó dátum/összeg).` : '')
     + (evMas ? `<br>${evMas} sor más évhez tartozik, ezeket kihagytuk.` : '');
 
@@ -765,14 +930,12 @@ function csvModalBezar() {
 }
 
 // --- Init ---
-document.getElementById('ev').textContent = ev;
-document.getElementById('evLabel2').textContent = ev;
 betolt();
+frissitFejlec();
 renderMonths();
 szamol();
 renderDeadlines();
 
-// Service Worker regisztráció
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
