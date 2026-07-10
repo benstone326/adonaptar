@@ -366,9 +366,9 @@
   <div class="card">
     <div class="card-label-row">
       <div class="card-label">Havi bevételek</div>
-      <button class="btn-csv" onclick="document.getElementById('csvInput').click()">⬆ CSV import</button>
+      <button class="btn-csv" onclick="document.getElementById('csvInput').click()">⬆ Import (CSV / XML)</button>
     </div>
-    <input type="file" id="csvInput" accept=".csv,text/csv" style="display:none" onchange="csvKivalasztva(this)">
+    <input type="file" id="csvInput" accept=".csv,.xml,text/csv,text/xml,application/xml" style="display:none" onchange="csvKivalasztva(this)">
     <div class="months-grid" id="monthsGrid"></div>
   </div>
 
@@ -437,14 +437,13 @@ const HOK      = ['Jan','Feb','Már','Ápr','Máj','Jún','Júl','Aug','Sze','Ok
 const HOK_LONG = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
 
 const HATARNAPOK = [
-  { ho:1,  nap:12, szoveg:'December havi számlaadat NAV felé (auto)' },
-  { ho:1,  nap:31, szoveg:'Előző negyedév SZJA-előleg (ha van)' },
+  { ho:1,  nap:12, szoveg:'Q4 negyedéves bevallás (2658) — előző év' },
   { ho:3,  nap:15, szoveg:'HIPA-bevallás benyújtása + befizetés (éves)' },
   { ho:3,  nap:31, szoveg:'Kamarai hozzájárulás (5 000 Ft)' },
-  { ho:4,  nap:30, szoveg:'Q1 SZJA-előleg (ha van)' },
+  { ho:4,  nap:12, szoveg:'Q1 negyedéves bevallás (2658)' },
   { ho:5,  nap:20, szoveg:'Éves SZJA-bevallás (eSZJA / 58-as)' },
-  { ho:7,  nap:31, szoveg:'Q2 SZJA-előleg (ha van)' },
-  { ho:10, nap:31, szoveg:'Q3 SZJA-előleg (ha van)' },
+  { ho:7,  nap:12, szoveg:'Q2 negyedéves bevallás (2658)' },
+  { ho:10, nap:12, szoveg:'Q3 negyedéves bevallás (2658)' },
 ];
 
 const AKTUALIS_EV = new Date().getFullYear();
@@ -588,7 +587,7 @@ function szamol() {
     const szjaSzoveg = szja > 0
       ? `A becsült <strong>${fmt(szja)} SZJA</strong> az adómentes sáv feletti jövedelemre esik. Mellékállásban a főállásod munkáltatója már von SZJA-t — a pontos különbözet az eSZJA-ban (máj. 20.) látszik.`
       : `A jövedelmed az <strong>adómentes sávon belül</strong> van, így várhatóan <strong>nincs fizetendő SZJA</strong>.`;
-    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 15., Győrújbarát). A kamarai hozzájárulás <strong>${fmt(p.kamaraiHj || 0)}</strong> (márc. 31.).`;
+    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 15., Győrújbarát). A kamarai hozzájárulás <strong>${fmt(p.kamaraiHj || 0)}</strong> (márc. 31.). Figyelem: a <strong>2658-as bevallást negyedévente be kell adni</strong> (követő hó 12.), akkor is, ha a fizetendő nulla.`;
   } else {
     infoEl.textContent = 'Vidd fel a havi bevételeket alább a számítás megkezdéséhez.';
   }
@@ -718,8 +717,9 @@ function renderDeadlines() {
   document.getElementById('footnote').innerHTML =
     `A számítás tájékoztató jellegű, ${ev}-os paraméterekkel: ${Math.round(p.koltsegHanyad*100)}% átalányköltség, `
     + `${fmt(p.mentesAlap)} SZJA-mentes jövedelemsáv, ${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA (Győrújbarát), `
-    + `${fmt(p.kamaraiHj || 0)} kamarai hozzájárulás. Mellékállású EV-ként nincs negyedéves SZJA-előleg, `
-    + `TB és SZOCHO. A sávos kisvállalkozói HIPA 12 M Ft alatti bevételnél kedvezőbb lehet — egyeztesd a könyvelőddel. Nem minősül adótanácsadásnak.`;
+    + `${fmt(p.kamaraiHj || 0)} kamarai hozzájárulás. A 2658-as bevallást negyedévente be kell adni (követő hó 12.), `
+    + `akkor is, ha a fizetendő nulla — mellékállásban a jövedelmed jellemzően az adómentes sávban van. `
+    + `A HIPA és a sávos kisvállalkozói adóalap lehetőségét egyeztesd a könyvelőddel. Nem minősül adótanácsadásnak.`;
 }
 
 // ============================================================
@@ -741,9 +741,14 @@ function csvKivalasztva(input) {
   if (!file) return;
   input.value = '';
 
+  const nev = (file.name || '').toLowerCase();
   const reader = new FileReader();
   reader.onload = e => {
     let txt = e.target.result;
+    // XML (NAV 2658) felismerés: kiterjesztés vagy tartalom alapján
+    if (nev.endsWith('.xml') || /<nyomtatvany|nyomtatvanyazonosito/i.test(txt.slice(0, 2000))) {
+      return navXmlFeldolgoz(txt);
+    }
     if (csvVanMojibake(txt)) {
       const r2 = new FileReader();
       r2.onload = e2 => csvFeldolgoz(e2.target.result);
@@ -756,6 +761,78 @@ function csvKivalasztva(input) {
   };
   reader.onerror = () => csvHiba('Nem sikerült beolvasni a fájlt.');
   reader.readAsText(file, 'UTF-8');
+}
+
+// --- NAV 2658 XML feldolgozás ---
+// A 0B0001E0020AA mező a negyedéves átalány-JÖVEDELEM (bevétel * jövedelemhányad).
+// Havi bontás nincs benne, ezért a negyedév utolsó hónapjába tesszük a visszaszámolt bevételt.
+function navXmlFeldolgoz(txt) {
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(txt, 'application/xml');
+    if (doc.querySelector('parsererror')) throw new Error('parse');
+  } catch (e) {
+    return csvHiba('Nem sikerült értelmezni az XML-t. Lehet, hogy sérült a fájl.');
+  }
+
+  // időszak (tol/ig) → év és negyedév
+  const tol = doc.querySelector('idoszak > tol');
+  const ig  = doc.querySelector('idoszak > ig');
+  if (!tol || !ig) {
+    return csvHiba('Az XML nem tartalmaz felismerhető időszakot — lehet, hogy nem 2658-as bevallás.');
+  }
+  const tolStr = tol.textContent.trim();       // pl. 20260401
+  const xmlEv  = parseInt(tolStr.slice(0, 4), 10);
+  const igHo   = parseInt(ig.textContent.trim().slice(4, 6), 10);  // a negyedév utolsó hónapja
+
+  // jövedelem mező
+  let jovedelem = null;
+  doc.querySelectorAll('mezo').forEach(m => {
+    if (m.getAttribute('eazon') === '0B0001E0020AA') {
+      jovedelem = parseFloat(m.textContent.trim());
+    }
+  });
+  if (jovedelem == null || isNaN(jovedelem)) {
+    return csvHiba('Az XML nem tartalmaz felismerhető jövedelemadatot (0B0001E0020AA mező).');
+  }
+
+  // bevétel visszaszámolása az adott év jövedelemhányadából
+  const p = paramsForYear(xmlEv);
+  const bevetelVissza = jovedelem / (1 - p.koltsegHanyad);
+
+  // havi tömb: a negyedév utolsó hónapjába tesszük
+  const havi = Array(12).fill(0);
+  const celHo = Math.min(11, Math.max(0, igHo - 1));
+  havi[celHo] = bevetelVissza;
+
+  csvParsedRows = havi;
+  navXmlElonezet(havi, xmlEv, igHo, jovedelem, bevetelVissza, p);
+}
+
+function navXmlElonezet(havi, xmlEv, igHo, jovedelem, bevetelVissza, p) {
+  const negyed = Math.ceil(igHo / 3);
+  const evEgyez = (xmlEv === ev);
+
+  let body = `
+    <div class="modal-row"><span>Forrás</span><span>NAV 2658 · ${xmlEv} Q${negyed}</span></div>
+    <div class="modal-row"><span>Bevallott jövedelem</span><span>${fmt(jovedelem)}</span></div>
+    <div class="modal-row"><span>Visszaszámolt bevétel (÷ ${Math.round((1-p.koltsegHanyad)*100)}%)</span><span>${fmt(bevetelVissza)}</span></div>
+    <div class="modal-row"><span>Beírás ide</span><span>${HOK_LONG[igHo-1]}</span></div>`;
+
+  let figyelem = `<div class="modal-err" style="background:#FFFBEB;border-color:#FDE68A;color:#92400E;margin-top:12px">
+    ⚠ A NAV 2658 csak <strong>negyedéves</strong> adatot tartalmaz, havi bontást nem. A teljes negyedévi bevétel a negyedév utolsó hónapjába (${HOK_LONG[igHo-1]}) kerül. Pontos havi bontáshoz használd a Számlázz.hu CSV exportot.</div>`;
+
+  if (!evEgyez) {
+    figyelem += `<div class="modal-err" style="margin-top:8px">Az XML <strong>${xmlEv}</strong>-es évhez tartozik, de most a <strong>${ev}</strong>. évet nézed. Válts évet a fejlécben az importhoz, vagy az adat rossz évbe kerül.</div>`;
+  }
+
+  document.getElementById('csvModalSub').innerHTML = `Negyedéves bevallás feldolgozva.`;
+  document.getElementById('csvModalBody').innerHTML = body + figyelem;
+  document.getElementById('csvModalActions').innerHTML = `
+    <button class="modal-btn ghost" onclick="csvModalBezar()">Mégse</button>
+    <button class="modal-btn secondary" onclick="csvAlkalmaz('hozzaad')">Hozzáadás</button>
+    <button class="modal-btn primary" onclick="csvAlkalmaz('felulir')">Felülírás</button>`;
+  document.getElementById('csvModal').classList.add('visible');
 }
 
 function csvSorParse(sor, delim) {
