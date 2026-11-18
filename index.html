@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Adónaptár">
-  <link rel="icon" type="image/x-icon" href="favicon.ico">
+
   <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
-  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icon-192.svg">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -144,6 +144,7 @@
     .stat-value.amber { color: #D97706; }
     .stat-value.green { color: #059669; }
     .stat-sub { font-size: 10px; color: #A1A1AA; margin-top: 2px; font-weight: 500; }
+    .hipa-mod { margin-top: 6px; width: 100%; font-size: 11px; font-family: inherit; color: #52525B; border: 1px solid #E4E4E7; border-radius: 6px; padding: 3px 4px; background: white; }
 
     .total-box {
       background: #FEF3C7;
@@ -326,9 +327,24 @@
         <div class="stat-sub" id="statSzjaSub"></div>
       </div>
       <div class="stat-box">
+        <div class="stat-label">TB-járulék</div>
+        <div class="stat-value amber" id="statTb">0 Ft</div>
+        <div class="stat-sub" id="statTbSub"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label">Szocho</div>
+        <div class="stat-value amber" id="statSzocho">0 Ft</div>
+        <div class="stat-sub" id="statSzochoSub"></div>
+      </div>
+      <div class="stat-box">
         <div class="stat-label">HIPA</div>
         <div class="stat-value amber" id="statHipa">0 Ft</div>
         <div class="stat-sub" id="statHipaSub"></div>
+        <select id="hipaMod" class="hipa-mod" onchange="beallitHipaMod(this.value)" aria-label="HIPA adóalap-módszer">
+          <option value="auto">Módszer: olcsóbb</option>
+          <option value="altalanos">Általános (bevétel)</option>
+          <option value="savos">Sávos (fix alap)</option>
+        </select>
       </div>
     </div>
     <div class="total-box">
@@ -336,7 +352,7 @@
         <div class="total-label">Becsült összes adó</div>
         <div class="total-value" id="statOsszes">0 Ft</div>
       </div>
-      <div class="total-note">SZJA + HIPA + kamarai hj.<br><strong>éves szinten</strong></div>
+      <div class="total-note" id="totalNote">SZJA + TB + szocho + HIPA<br><strong>éves szinten</strong></div>
     </div>
 
     <!-- SZJA adómentes sáv -->
@@ -360,6 +376,21 @@
       <div class="progress-fill" id="progressFill" style="width:0%;background:#10B981"></div>
     </div>
     <div class="progress-caption" id="hatarCaption"></div>
+    <div class="progress-row" style="margin-top:14px">
+      <span>Alanyi ÁFA-mentesség határa</span>
+      <span id="afaSzoveg" style="font-weight:600;color:#16A34A"></span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="afaFill" style="width:0%;background:#10B981"></div>
+    </div>
+    <div class="progress-caption" id="afaCaption"></div>
+  </div>
+
+  <!-- Negyedéves befizetések (göngyölítés) -->
+  <div class="card">
+    <div class="card-label">Negyedéves befizetések <span id="negyedEv"></span></div>
+    <div id="negyedevek"></div>
+    <div class="progress-caption" style="margin-top:8px">SZJA-előleg + tb-járulék + szocho a negyedévet követő hó 12-éig (munkaszüneti napnál a következő munkanapon). Az adómentes rész felhasználása év elejétől göngyölítve számít.</div>
   </div>
 
   <!-- Havi bevételek -->
@@ -394,32 +425,82 @@
 
 <script>
 // ============================================================
-// ÉVENKÉNTI ADÓPARAMÉTEREK
+// ÉVENKÉNTI ADÓPARAMÉTEREK  (jogszabályok ellenőrizve: 2026. 11. 18.)
 // Ha egy érték megváltozik / új év jön, itt írd át.
-// FONTOS: a HIPA-kulcsot ellenőrizd a könyvelőddel / a hatályos
-// győrújbaráti rendelettel! A 2% nem volt megerősíthető –
-// a régiós rendeletek 1,9% körüli kulcsot mutatnak.
+//
+// SZJA / járulékok – mellékállás (heti 36 órás munkaviszony mellett):
+//   • adómentes az átalányjövedelem éves minimálbér felét meg nem haladó
+//     része (Szja tv. 1. sz. mell. 4.48.) – SZJA-, tb- és szocho-mentes;
+//   • felette 15% SZJA (Szja tv. 8. §) + 18,5% tb-járulék (Tbj. 25. §)
+//     + 13% szocho (Szocho tv. 2. §), göngyölítve, minimum alap nélkül
+//     (Tbj. 42. § (2) a), Szocho tv. 9. § (5)); nincs járulékplafon;
+//   • negyedévente, a negyedévet követő hó 12-éig ('58-as bevallás).
+//   Forrás: NAV 100. sz. információs füzet (2026), 4. és 6.2 pont.
+// HIPA (Htv. 1990. évi C. tv.) – az átalányjövedelem 120%-a mint adóalap
+//   2023 óta NEM létezik. Két lehetőség:
+//   • általános: alap = nettó árbevétel – (ELÁBÉ, alvállalkozó, anyag) (39. §);
+//     szoftverfejlesztésnél jellemzően ≈ a teljes bevétel;
+//   • sávos (39/A. §): bevétel ≤ 12 M → 2,5 M; ≤ 18 M → 6 M; ≤ 25 M → 8,5 M alap.
+//   Győrújbarát 17/2015. (XI.18.) ör.: 1,9%; mentes, ha az (általános) adóalap
+//   ≤ 1 000 000 Ft (3. §) – a sávos módszerrel ez nem vonható össze.
+// ÁFA alanyi mentesség (Áfa tv. 188. §): csak a BELFÖLDÖN teljesített
+//   ügyletek számítanak; külföldi cégnek nyújtott szolgáltatás nem.
 // ============================================================
 const ADO_PARAMS = {
   2025: {
     koltsegHanyad: 0.40,          // átalányköltség 2025
     szjaKulcs:     0.15,
-    hipaKulcs:     0.019,         // Győrújbarát 1,9% (SzámlaTárs alapján megerősítve)
-    bevHatar:      6719800,       // (a régi appból; 2025-re a 10x minimálbér ~ 6 989 e Ft volt)
-    mentesAlap:    1600000,       // SZJA-mentes jövedelemrész (éves minimálbér fele, közelítő 2025)
-    kamaraiHj:     5000,          // éves kamarai hozzájárulás (fix)
-    hatarMegj:     '2025-ös érték'
+    tbKulcs:       0.185,         // tb-járulék
+    szochoKulcs:   0.13,          // szociális hozzájárulási adó
+    hipaKulcs:     0.019,         // Győrújbarát 17/2015. ör. 2. § (1)
+    hipaMentes:    1000000,       // Győrújbarát 17/2015. ör. 3. § (1)
+    bevHatar:      34896000,      // 2025: 10× éves minimálbér (290 800 × 12 × 10)
+    mentesAlap:    1744800,       // adómentes jövedelemrész 2025 (éves minimálbér fele)
+    afaHatar:      18000000,      // alanyi ÁFA-mentesség 2025
+    kamaraiHj:     5000,          // Gktv. 34/A. §, márc. 31.
+    hatarMegj:     '10× éves minimálbér (2025)'
   },
   2026: {
-    koltsegHanyad: 0.45,          // 2026-tól 45%
+    koltsegHanyad: 0.45,          // 2026-tól 45% (2025. évi LXXXIV. tv. 3. § a))
     szjaKulcs:     0.15,
-    hipaKulcs:     0.019,         // Győrújbarát 1,9% (SzámlaTárs alapján megerősítve)
-    bevHatar:      38736000,      // 2026: éves minimálbér 10x (általános átalányadó-határ)
-    mentesAlap:    1936800,       // SZJA-mentes jövedelemrész 2026 (éves minimálbér fele)
-    kamaraiHj:     5000,          // éves kamarai hozzájárulás (fix)
+    tbKulcs:       0.185,
+    szochoKulcs:   0.13,
+    hipaKulcs:     0.019,
+    hipaMentes:    1000000,
+    bevHatar:      38736000,      // 2026: éves minimálbér 10x (322 800 × 12 × 10)
+    mentesAlap:    1936800,       // adómentes jövedelemrész 2026 (éves minimálbér fele)
+    afaHatar:      20000000,      // 2025. évi LXXXIV. tv. 14. §
+    kamaraiHj:     5000,          // 2026-ban még fizetendő volt (márc. 31.)
     hatarMegj:     '10× éves minimálbér (2026)'
+  },
+  2027: {
+    // A hatályos törvény (2025. évi LXXXIV. tv. 3. § b)) szerint 2027-től 50% lenne,
+    // de a T/927 törvényjavaslat 122. §-a ezt hatályba lépése előtt eltörli (2026. 11.:
+    // bizottság támogatta, zárószavazás még nincs). Óvatos becslésként 45%-kal számolunk;
+    // ha a T/927 mégsem megy át, írd át 0.50-re.
+    koltsegHanyad: 0.45,
+    szjaKulcs:     0.15,
+    tbKulcs:       0.185,
+    szochoKulcs:   0.13,
+    hipaKulcs:     0.019,         // 2026. 11-ig nem módosult a rendelet – decemberben ellenőrizd
+    hipaMentes:    1000000,
+    // A 2027-es minimálbér még nincs kihirdetve (2026. 11.: ~347 000 Ft-os ajánlat a
+    // tárgyalóasztalon). Addig a 2026-os értékekkel számolunk.
+    // Kihirdetés után: bevHatar = minimálbér×120, mentesAlap = minimálbér×6.
+    bevHatar:      38736000,
+    mentesAlap:    1936800,
+    afaHatar:      22000000,      // 2025. évi LXXXIV. tv. 15. § (már elfogadott)
+    // T/938: a kötelező kamarai hozzájárulás 2027. jan. 1-jétől megszűnik (a kamarai
+    // nyilvántartásba vétel kötelező marad). 2026. 11. 18-án még nincs kihirdetve.
+    kamaraiHj:     0,
+    becsles:       true,
+    hatarMegj:     '10× éves minimálbér (2026-os értékkel, 2027-es még nincs kihirdetve)'
   }
 };
+
+// SZJA-előleget nem kell megfizetni, ha az év elejétől összesítve vagy
+// negyedévente nem haladja meg a 10 000 Ft-ot (Szja tv. 46. § (9)).
+const SZJA_ELOLEG_MINIMUM = 10000;
 // Ismeretlen évhez a legutóbbi ismert paramétert használjuk:
 const ISMERT_EVEK = Object.keys(ADO_PARAMS).map(Number).sort((a,b)=>a-b);
 const MIN_EV = 2025;
@@ -433,18 +514,162 @@ function paramsForYear(y) {
   return ADO_PARAMS[best];
 }
 
+// ============================================================
+// SZÁMÍTÁS (tiszta függvény, DOM nélkül)
+// havi: 12 elemű bevétel-tömb (Ft). Visszaadja az éves és a negyedéves
+// (göngyölített) kötelezettségeket.
+// ============================================================
+function szamitas(p, havi, hipaMod = 'auto') {
+  const kh = 1 - p.koltsegHanyad;                       // jövedelemhányad
+  const h = havi.map(x => Math.max(0, +x || 0));        // negatív/üres hónap = 0
+  const ossz = h.reduce((s, x) => s + x, 0);
+  const alap = ossz * kh;                                // átalányban megállapított jövedelem
+  const adokoteles = Math.max(0, alap - p.mentesAlap);   // mentes rész feletti jövedelem
+
+  // Göngyölítés (NAV 100. sz. füzet 4. és 6. pont): negyedévente az év elejétől
+  // halmozott, mentes rész feletti jövedelem, csökkentve a korábban már figyelembe vett alappal.
+  const negyedevek = [];
+  let elozoAlap = 0, szjaFizetve = 0;
+  for (let q = 0; q < 4; q++) {
+    const halmozottBev = h.slice(0, (q + 1) * 3).reduce((s, x) => s + x, 0);
+    const halmozottAlap = Math.max(0, halmozottBev * kh - p.mentesAlap);
+    const negyedAlap = halmozottAlap - elozoAlap;
+    elozoAlap = halmozottAlap;
+    // SZJA-előleg: az év elejétől számított előlegből levonjuk a már befizetettet;
+    // 10 000 Ft alatt nem kell befizetni, az összeg a következő negyedévre / az éves bevallásba kerül.
+    const szjaEsedekes = halmozottAlap * p.szjaKulcs - szjaFizetve;
+    const szja = szjaEsedekes > SZJA_ELOLEG_MINIMUM ? szjaEsedekes : 0;
+    szjaFizetve += szja;
+    negyedevek.push({
+      q: q + 1,
+      bevetel: h.slice(q * 3, q * 3 + 3).reduce((s, x) => s + x, 0),
+      alap: negyedAlap,
+      szja,
+      szjaHalasztott: szja === 0 && szjaEsedekes > 0 ? szjaEsedekes : 0,
+      tb: negyedAlap * p.tbKulcs,
+      szocho: negyedAlap * p.szochoKulcs,
+    });
+  }
+
+  const szja   = adokoteles * p.szjaKulcs;
+  const tb     = adokoteles * p.tbKulcs;
+  const szocho = adokoteles * p.szochoKulcs;
+  const szjaEvesKulonbozet = szja - szjaFizetve;   // az éves bevallásban (máj. 20.) fizetendő
+  const hipa   = hipaSzamit(p, ossz, hipaMod);
+  const kamarai = p.kamaraiHj || 0;   // regisztráció alapján jár, bevételtől függetlenül
+  return { ossz, alap, adokoteles, szja, tb, szocho, szjaEvesKulonbozet, hipa, kamarai,
+           total: szja + tb + szocho + hipa.ado + kamarai, negyedevek };
+}
+
+// HIPA (Htv. 39. § és 39/A. §, Győrújbarát 17/2015. ör.)
+//  'altalanos': alap = nettó árbevétel (szoftverfejlesztésnél nincs ELÁBÉ/anyag/alvállalkozó
+//               levonás – ha mégis van, azzal csökken); helyi mentesség, ha alap ≤ hipaMentes.
+//  'savos':     bevétel ≤ 12 M → 2,5 M; ≤ 18 M → 6 M; ≤ 25 M → 8,5 M alap; 25 M felett nem választható.
+//  'auto':      a kettő közül az olcsóbb (a választást a könyvelővel egyeztesd).
+function hipaAltalanos(p, ossz) {
+  const alap = ossz;
+  const mentes = alap <= p.hipaMentes;
+  return { mod: 'altalanos', alap, ado: mentes ? 0 : alap * p.hipaKulcs,
+           leiras: mentes ? `általános · ${fmt(p.hipaMentes)} alatt helyi mentesség` : 'általános · bevételre' };
+}
+function hipaSavos(p, ossz) {
+  const alap = ossz <= 12e6 ? 2.5e6 : ossz <= 18e6 ? 6e6 : ossz <= 25e6 ? 8.5e6 : null;
+  if (alap == null) return null;   // 25 M Ft felett nem választható
+  return { mod: 'savos', alap, ado: alap * p.hipaKulcs, leiras: `sávos · ${fmt(alap)} fix alap` };
+}
+function hipaSzamit(p, ossz, mod) {
+  const alt = hipaAltalanos(p, ossz);
+  const sav = hipaSavos(p, ossz);
+  let v;
+  if (mod === 'savos') v = sav || alt;               // 25 M felett kötelezően általános
+  else if (mod === 'altalanos') v = alt;
+  else v = (sav && sav.ado < alt.ado) ? sav : alt;
+  return { ...v, altalanos: alt, savos: sav, valasztott: mod };
+}
+
+// ============================================================
+// MUNKANAPOK – ha a határidő munkaszüneti napra esik, a következő
+// munkanapon jár le (Air. 52. § (4)).
+// ============================================================
+function husvetVasarnap(y) {
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const ho = Math.floor((h + l - 7 * m + 114) / 31), nap = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, ho - 1, nap);
+}
+function munkaszunetiNap(d) {
+  const dow = d.getDay();
+  if (dow === 0 || dow === 6) return true;
+  const md = (d.getMonth() + 1) + '-' + d.getDate();
+  if (['1-1','3-15','5-1','8-20','10-23','11-1','12-24','12-25','12-26'].includes(md)) return true;
+  const husvet = husvetVasarnap(d.getFullYear());
+  const nap = 86400000;
+  const kulonbseg = Math.round((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+    - Date.UTC(husvet.getFullYear(), husvet.getMonth(), husvet.getDate())) / nap);
+  return [-2, 1, 50].includes(kulonbseg);   // nagypéntek, húsvéthétfő, pünkösdhétfő
+}
+function munkanapra(y, ho, nap) {
+  const d = new Date(y, ho - 1, nap);
+  while (munkaszunetiNap(d)) d.setDate(d.getDate() + 1);
+  return d;
+}
+
 const HOK      = ['Jan','Feb','Már','Ápr','Máj','Jún','Júl','Aug','Sze','Okt','Nov','Dec'];
 const HOK_LONG = ['Január','Február','Március','Április','Május','Június','Július','Augusztus','Szeptember','Október','November','December'];
 
-const HATARNAPOK = [
-  { ho:1,  nap:12, szoveg:'Q4 negyedéves bevallás (2658) — előző év' },
-  { ho:3,  nap:15, szoveg:'HIPA-bevallás benyújtása + befizetés (éves)' },
-  { ho:3,  nap:31, szoveg:'Kamarai hozzájárulás (5 000 Ft)' },
-  { ho:4,  nap:12, szoveg:'Q1 negyedéves bevallás (2658)' },
-  { ho:5,  nap:20, szoveg:'Éves SZJA-bevallás (eSZJA / 58-as)' },
-  { ho:7,  nap:12, szoveg:'Q2 negyedéves bevallás (2658)' },
-  { ho:10, nap:12, szoveg:'Q3 negyedéves bevallás (2658)' },
-];
+// Az év két utolsó számjegye a nyomtatványszámokhoz (pl. 2026 -> '26' -> 2658)
+function yy(y) { return String(y % 100).padStart(2, '0'); }
+
+// Az adott év határidői. A kamarai hozzájárulás csak akkor jelenik meg,
+// ha az évre van fizetendő összeg.
+// Az adott év mentett havi bevételei (a megnyitott évnél a memóriában lévők)
+function haviBevetelEvre(y) {
+  if (y === ev) return bevetel.map(b => parseFloat(b.osszeg) || 0);
+  try {
+    const raw = localStorage.getItem(storageKey(y));
+    if (raw) return JSON.parse(raw).map(b => parseFloat(b.osszeg) || 0);
+  } catch (e) {}
+  return null;
+}
+function negyedFizetendo(y, q) {
+  const havi = haviBevetelEvre(y);
+  if (!havi) return null;
+  const n = szamitas(paramsForYear(y), havi).negyedevek[q - 1];
+  return n.szja + n.tb + n.szocho;
+}
+// Az adott év ténylegesen alkalmazott HIPA-módszere ('altalanos' | 'savos')
+function hipaModTenyleges(y) {
+  const havi = haviBevetelEvre(y) || Array(12).fill(0);
+  const ossz = havi.reduce((s, x) => s + Math.max(0, x), 0);
+  return hipaSzamit(paramsForYear(y), ossz, hipaModEvre(y)).mod;
+}
+
+function hatarnapok(y) {
+  const p = paramsForYear(y);
+  const lista = [
+    { d: munkanapra(y, 1, 12),  szoveg:`Q4 negyedéves bevallás (${yy(y-1)}58) + SZJA-előleg, járulékok — ${y-1}. év`, osszeg: negyedFizetendo(y-1, 4) },
+    { d: munkanapra(y, 4, 12),  szoveg:`Q1 negyedéves bevallás (${yy(y)}58) + SZJA-előleg, járulékok`, osszeg: negyedFizetendo(y, 1) },
+    { d: munkanapra(y, 5, 20),  szoveg:`Éves SZJA-bevallás + befizetés (${yy(y-1)}SZJA) — ${y-1}. év` },
+    { d: munkanapra(y, 7, 12),  szoveg:`Q2 negyedéves bevallás (${yy(y)}58) + SZJA-előleg, járulékok`, osszeg: negyedFizetendo(y, 2) },
+    { d: munkanapra(y, 10, 12), szoveg:`Q3 negyedéves bevallás (${yy(y)}58) + SZJA-előleg, járulékok`, osszeg: negyedFizetendo(y, 3) },
+  ];
+  // HIPA (Art. 1–2. melléklet, Htv. 39/A. §) – a bevallás a NAV-hoz megy (pl. 26HIPAK)
+  if (hipaModTenyleges(y) === 'savos') {
+    lista.push({ d: munkanapra(y, 5, 31), szoveg:`HIPA (sávos): ${y-1}. évi adó + ${y}. évi előleg (az előző évi adóval egyező), módszerválasztás határideje (${yy(y-1)}HIPAK)` });
+  } else {
+    lista.push(
+      { d: munkanapra(y, 3, 15), szoveg:'HIPA-előleg (általános módszer, az előző évi adó fele)' },
+      { d: munkanapra(y, 5, 31), szoveg:`HIPA-bevallás + különbözet befizetése (${yy(y-1)}HIPAK) — ${y-1}. év` },
+      { d: munkanapra(y, 9, 15), szoveg:'HIPA-előleg (általános módszer)' },
+    );
+  }
+  if (p.kamaraiHj > 0) {
+    lista.push({ d: munkanapra(y, 3, 31), szoveg:`Kamarai hozzájárulás (${fmt(p.kamaraiHj)})` });
+  }
+  return lista;
+}
 
 const AKTUALIS_EV = new Date().getFullYear();
 const maHo = new Date().getMonth();
@@ -454,6 +679,15 @@ let bevetel = Array.from({length:12}, (_,i) => ({ ho:i, osszeg:'' }));
 let saveTimer = null;
 
 function storageKey(y) { return 'adonaptar-' + y; }
+
+// HIPA-módszer évenként: 'auto' | 'altalanos' | 'savos'
+function hipaModEvre(y) {
+  try { return localStorage.getItem('adonaptar-hipamod-' + y) || 'auto'; } catch (e) { return 'auto'; }
+}
+function beallitHipaMod(mod) {
+  try { localStorage.setItem('adonaptar-hipamod-' + ev, mod); } catch (e) {}
+  szamol();
+}
 
 function fmt(n) {
   return Math.round(n).toLocaleString('hu-HU') + ' Ft';
@@ -526,15 +760,12 @@ function frissitFejlec() {
 // --- Számítás ---
 function szamol() {
   const p = paramsForYear(ev);
-  const ossz  = bevetel.reduce((s,b) => s + (parseFloat(b.osszeg)||0), 0);
-  const alap  = ossz * (1 - p.koltsegHanyad);          // átalányjövedelem
-  // SZJA: csak a mentes sáv feletti jövedelemrészre
-  const adokoteles = Math.max(0, alap - p.mentesAlap);
-  const szja  = adokoteles * p.szjaKulcs;
-  // HIPA alapja átalányadósnál a jövedelem (bevétel - költséghányad), nem a teljes bevétel
-  const hipa  = alap * p.hipaKulcs;
-  const kamarai = (ossz > 0 ? (p.kamaraiHj || 0) : 0);  // csak ha van tevékenység
-  const total = szja + hipa + kamarai;
+  const hipaMod = hipaModEvre(ev);
+  document.getElementById('hipaMod').value = hipaMod;
+  const e = szamitas(p, bevetel.map(b => parseFloat(b.osszeg) || 0), hipaMod);
+  const { ossz, alap, adokoteles, szja, tb, szocho, total } = e;
+  const hipa = e.hipa.ado;
+  renderNegyedevek(e);
 
   const pct    = Math.min(100, (ossz / p.bevHatar) * 100);
   const maradt = Math.max(0, p.bevHatar - ossz);
@@ -545,9 +776,17 @@ function szamol() {
   document.getElementById('statSzja').textContent   = fmt(szja);
   document.getElementById('statSzjaSub').textContent = adokoteles > 0
     ? `mentes sáv felett` : `mentes sávon belül`;
+  document.getElementById('statTb').textContent     = fmt(tb);
+  document.getElementById('statTbSub').textContent  = `${(p.tbKulcs*100).toLocaleString('hu-HU')}% · mentes sáv felett`;
+  document.getElementById('statSzocho').textContent = fmt(szocho);
+  document.getElementById('statSzochoSub').textContent = `${(p.szochoKulcs*100).toLocaleString('hu-HU')}% · mentes sáv felett`;
   document.getElementById('statHipa').textContent   = fmt(hipa);
-  document.getElementById('statHipaSub').textContent = `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% · jövedelemre`;
+  const masikHipa = e.hipa.mod === 'savos' ? e.hipa.altalanos : e.hipa.savos;
+  document.getElementById('statHipaSub').textContent = `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% · ${e.hipa.leiras}`
+    + (masikHipa ? ` (${masikHipa.mod === 'savos' ? 'sávosan' : 'általánosan'}: ${fmt(masikHipa.ado)})` : ' (sávos 25 M felett nem választható)');
   document.getElementById('statOsszes').textContent = fmt(total);
+  document.getElementById('totalNote').innerHTML =
+    `SZJA + TB + szocho + HIPA${p.kamaraiHj > 0 ? ' + kamarai hj.' : ''}<br><strong>éves szinten</strong>`;
 
   // SZJA mentes sáv vizualizáció (a jövedelem mennyit használt el a mentes keretből)
   const bandPct = Math.min(100, (alap / p.mentesAlap) * 100);
@@ -564,12 +803,12 @@ function szamol() {
     bandRemainEl.textContent = fmt(maradtAlap) + ' jövedelem maradt';
     bandRemainEl.style.fontWeight = '600';
     bandCapEl.className = 'band-caption';
-    bandCapEl.innerHTML = `Amíg az éves bevételed <strong>${fmt(mentesBevHatar)}</strong> alatt marad, nincs fizetendő SZJA. Még kb. <strong>${fmt(maradtBev)}</strong> bevétel fér bele.`;
+    bandCapEl.innerHTML = `Amíg az éves bevételed <strong>${fmt(mentesBevHatar)}</strong> alatt marad, nincs fizetendő SZJA, tb-járulék és szocho. Még kb. <strong>${fmt(maradtBev)}</strong> bevétel fér bele.`;
   } else {
     bandRemainEl.textContent = 'kimerítve';
     bandRemainEl.style.fontWeight = '600';
     bandCapEl.className = 'band-caption over';
-    bandCapEl.innerHTML = `Az adómentes sáv (${fmt(p.mentesAlap)} jövedelem ≈ ${fmt(mentesBevHatar)} bevétel) kimerült. A felette lévő részre <strong>${(p.szjaKulcs*100)}% SZJA</strong> esik.`;
+    bandCapEl.innerHTML = `Az adómentes sáv (${fmt(p.mentesAlap)} jövedelem ≈ ${fmt(mentesBevHatar)} bevétel) kimerült. A felette lévő részre <strong>${(p.szjaKulcs*100)}% SZJA + ${(p.tbKulcs*100).toLocaleString('hu-HU')}% tb-járulék + ${(p.szochoKulcs*100)}% szocho</strong> esik.`;
   }
 
   // progress
@@ -581,18 +820,72 @@ function szamol() {
   hatarigEl.style.color = pct > 80 ? '#DC2626' : pct > 60 ? '#D97706' : '#16A34A';
   document.getElementById('hatarCaption').textContent = `${fmt(p.bevHatar)} · ${p.hatarMegj}`;
 
+  // ÁFA alanyi mentesség (Áfa tv. 188. §) – felső becslés: az összes bevétel,
+  // pedig csak a belföldön teljesített ügyletek számítanak.
+  const afaPct = Math.min(100, (ossz / p.afaHatar) * 100);
+  const afaFill = document.getElementById('afaFill');
+  afaFill.style.width = afaPct + '%';
+  afaFill.style.background = afaPct > 80 ? '#EF4444' : afaPct > 60 ? '#F59E0B' : '#10B981';
+  const afaSz = document.getElementById('afaSzoveg');
+  afaSz.textContent = ossz > p.afaHatar ? 'túllépve' : fmt(p.afaHatar - ossz) + ' maradt';
+  afaSz.style.color = afaPct > 80 ? '#DC2626' : afaPct > 60 ? '#D97706' : '#16A34A';
+  document.getElementById('afaCaption').textContent =
+    `${fmt(p.afaHatar)} · csak a belföldi teljesítés számít, a külföldi cégnek nyújtott szolgáltatás nem. `
+    + `Túllépéskor már a túllépő számla ÁFÁ-s, és be kell jelentkezni a NAV-nál.`;
+
   // info box
   const infoEl = document.getElementById('infoBox');
   if (ossz > 0) {
     const szjaSzoveg = szja > 0
-      ? `A becsült <strong>${fmt(szja)} SZJA</strong> az adómentes sáv feletti jövedelemre esik. Mellékállásban a főállásod munkáltatója már von SZJA-t — a pontos különbözet az eSZJA-ban (máj. 20.) látszik.`
-      : `A jövedelmed az <strong>adómentes sávon belül</strong> van, így várhatóan <strong>nincs fizetendő SZJA</strong>.`;
-    infoEl.innerHTML = `${szjaSzoveg} A <strong>${fmt(hipa)} HIPA</strong> ténylegesen fizetendő (márc. 15., Győrújbarát). A kamarai hozzájárulás <strong>${fmt(p.kamaraiHj || 0)}</strong> (márc. 31.). Figyelem: a <strong>2658-as bevallást negyedévente be kell adni</strong> (követő hó 12.), akkor is, ha a fizetendő nulla.`;
+      ? `Az adómentes sáv feletti jövedelemre becsülten <strong>${fmt(szja)} SZJA</strong>, <strong>${fmt(tb)} tb-járulék</strong> és <strong>${fmt(szocho)} szocho</strong> esik. Ezeket negyedévente, a göngyölített jövedelem alapján kell megfizetni (követő hó 12.).`
+        + (e.szjaEvesKulonbozet > 0.5 ? ` A 10 000 Ft alatti, be nem fizetett SZJA-előleg (<strong>${fmt(e.szjaEvesKulonbozet)}</strong>) az éves bevallással (máj. 20.) esedékes.` : '')
+      : `A jövedelmed az <strong>adómentes sávon belül</strong> van, így várhatóan <strong>nincs fizetendő SZJA, tb-járulék és szocho</strong>.`;
+    const kamaraiSzoveg = p.kamaraiHj > 0
+      ? ` A kamarai hozzájárulás <strong>${fmt(p.kamaraiHj)}</strong> (márc. 31.).`
+      : ` Kamarai hozzájárulást ${ev}-től várhatóan nem kell fizetni (T/938 törvényjavaslat); a kamarai nyilvántartás kötelező marad.`;
+    const hipaSzoveg = e.hipa.mod === 'savos'
+      ? ` A <strong>${fmt(hipa)} HIPA</strong> sávos módszerrel (Győrújbarát, 1,9%) a következő év máj. 31-ig fizetendő.`
+      : (hipa > 0
+        ? ` A <strong>${fmt(hipa)} HIPA</strong> általános módszerrel (Győrújbarát, 1,9%) a következő év máj. 31-ig vallandó be; előleg márc. 15. és szept. 15.`
+        : ` HIPA nem fizetendő: az adóalap ${fmt(p.hipaMentes)} alatt van (győrújbaráti helyi mentesség).`);
+    const hatarSzoveg = ossz > p.bevHatar
+      ? `<strong style="color:#DC2626">⚠ A bevétel átlépte az átalányadózás értékhatárát (${fmt(p.bevHatar)}).</strong> Ekkor az átalányadózás az egész évre visszamenőleg megszűnik: január 1-jétől vállalkozói SZJA szerint kell adózni, és 12 hónapig nem választható újra. Ezt a számítást már nem lehet használni — fordulj könyvelőhöz. `
+      : '';
+    const becslesSzoveg = p.becsles
+      ? `<strong>${ev}. évi becslés:</strong> a minimálbér még nincs kihirdetve, a 45%-os költséghányad pedig a T/927 elfogadásától függ (a hatályos törvény szerint 50% lenne). `
+      : '';
+    infoEl.innerHTML = `${hatarSzoveg}${becslesSzoveg}${szjaSzoveg}${hipaSzoveg}${kamaraiSzoveg} Figyelem: a <strong>${yy(ev)}58-as bevallást negyedévente be kell adni</strong> (követő hó 12.), akkor is, ha a fizetendő nulla.`;
   } else {
     infoEl.textContent = 'Vidd fel a havi bevételeket alább a számítás megkezdéséhez.';
   }
 
   renderAlerts();
+  renderDeadlines();
+}
+
+// --- Negyedéves befizetések ---
+function datumSzoveg(d) {
+  return `${d.getFullYear()}. ${HOK[d.getMonth()].toLowerCase()}. ${d.getDate()}.`;
+}
+function renderNegyedevek(e) {
+  document.getElementById('negyedEv').textContent = ev;
+  const hataridok = [munkanapra(ev, 4, 12), munkanapra(ev, 7, 12), munkanapra(ev, 10, 12), munkanapra(ev + 1, 1, 12)];
+  document.getElementById('negyedevek').innerHTML = e.negyedevek.map((n, i) => {
+    const fiz = n.szja + n.tb + n.szocho;
+    let reszlet = fiz > 0
+      ? `SZJA ${fmt(n.szja)} · TB ${fmt(n.tb)} · szocho ${fmt(n.szocho)}`
+      : (n.bevetel > 0 ? 'adómentes részen belül' : 'nincs bevétel');
+    if (n.szjaHalasztott > 0) {
+      reszlet += ` · SZJA-előleg ${fmt(n.szjaHalasztott)} (10 000 Ft alatt: nem kell befizetni, továbbvisszük)`;
+    }
+    return `
+      <div class="deadline-row">
+        <div class="deadline-date">Q${n.q}</div>
+        <div class="deadline-text">${fmt(fiz)}
+          <div class="month-szja">${reszlet} · határidő: ${datumSzoveg(hataridok[i])}</div>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // --- Hónap grid ---
@@ -657,15 +950,18 @@ function beallitBevetel(ho, ertek) {
   });
 }
 
-// --- Alerts ---
-function renderAlerts() {
+// Hány nap van hátra a határnapig (naptári napban, a mai nap = 0)
+function napokHatra(d) {
   const ma = new Date();
-  const kozelgo = HATARNAPOK
-    .map(h => {
-      const d = new Date(ev, h.ho-1, h.nap);
-      const diff = Math.ceil((d - ma) / 86400000);
-      return {...h, d, diff};
-    })
+  const ma0 = Date.UTC(ma.getFullYear(), ma.getMonth(), ma.getDate());
+  const d0  = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((d0 - ma0) / 86400000);
+}
+
+// --- Alerts --- (a mai dátumhoz képest, függetlenül attól, melyik évet nézed)
+function renderAlerts() {
+  const kozelgo = [...hatarnapok(AKTUALIS_EV), ...hatarnapok(AKTUALIS_EV + 1)]
+    .map(h => ({...h, diff: napokHatra(h.d)}))
     .filter(h => h.diff >= 0 && h.diff <= 45)
     .sort((a,b) => a.diff - b.diff);
 
@@ -676,11 +972,11 @@ function renderAlerts() {
     return `
       <div class="alert ${color}">
         <div class="alert-icon ${color}">
-          <span class="day">${h.nap}</span>
-          <span class="mon">${HOK[h.ho-1]}</span>
+          <span class="day">${h.d.getDate()}</span>
+          <span class="mon">${HOK[h.d.getMonth()]}</span>
         </div>
         <div>
-          <div class="alert-title">${h.szoveg}</div>
+          <div class="alert-title">${h.szoveg}${h.osszeg != null ? ` — <strong>${fmt(h.osszeg)}</strong>` : ''}</div>
           ${badge(diffSzoveg, color)}
         </div>
       </div>`;
@@ -689,13 +985,8 @@ function renderAlerts() {
 
 // --- Deadline list ---
 function renderDeadlines() {
-  const ma = new Date();
-  const sorted = HATARNAPOK
-    .map(h => {
-      const d = new Date(ev, h.ho-1, h.nap);
-      const diff = Math.ceil((d - ma) / 86400000);
-      return {...h, d, diff};
-    })
+  const sorted = hatarnapok(ev)
+    .map(h => ({...h, diff: napokHatra(h.d)}))
     .sort((a,b) => a.d - b.d);
 
   document.getElementById('deadlines').innerHTML = sorted.map(h => {
@@ -707,19 +998,24 @@ function renderDeadlines() {
         : badge(h.diff + 'n','navy');
     return `
       <div class="deadline-row ${past ? 'past' : ''}">
-        <div class="deadline-date">${h.nap}.<br><span class="deadline-mon">${HOK[h.ho-1]}</span></div>
-        <div class="deadline-text">${h.szoveg}</div>
+        <div class="deadline-date">${h.d.getDate()}.<br><span class="deadline-mon">${HOK[h.d.getMonth()]}</span></div>
+        <div class="deadline-text">${h.szoveg}${h.osszeg != null ? `<div class="month-szja">fizetendő: ${fmt(h.osszeg)}</div>` : ''}</div>
         ${jelzo}
       </div>`;
   }).join('');
 
   const p = paramsForYear(ev);
   document.getElementById('footnote').innerHTML =
-    `A számítás tájékoztató jellegű, ${ev}-os paraméterekkel: ${Math.round(p.koltsegHanyad*100)}% átalányköltség, `
-    + `${fmt(p.mentesAlap)} SZJA-mentes jövedelemsáv, ${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA (Győrújbarát), `
-    + `${fmt(p.kamaraiHj || 0)} kamarai hozzájárulás. A 2658-as bevallást negyedévente be kell adni (követő hó 12.), `
-    + `akkor is, ha a fizetendő nulla — mellékállásban a jövedelmed jellemzően az adómentes sávban van. `
-    + `A HIPA és a sávos kisvállalkozói adóalap lehetőségét egyeztesd a könyvelőddel. Nem minősül adótanácsadásnak.`;
+    `A számítás tájékoztató jellegű, ${ev}. évi paraméterekkel: ${Math.round(p.koltsegHanyad*100)}% átalányköltség, `
+    + `${fmt(p.mentesAlap)} adómentes jövedelemsáv (SZJA, tb-járulék, szocho), `
+    + `felette ${(p.szjaKulcs*100)}% SZJA + ${(p.tbKulcs*100).toLocaleString('hu-HU')}% tb-járulék + ${(p.szochoKulcs*100)}% szocho, `
+    + `${(p.hipaKulcs*100).toLocaleString('hu-HU')}% HIPA (Győrújbarát: általános módszernél a bevételre, ${fmt(p.hipaMentes)} alapig mentes; `
+    + `sávos módszernél fix alapra), `
+    + (p.kamaraiHj > 0 ? `${fmt(p.kamaraiHj)} kamarai hozzájárulás. ` : `kamarai hozzájárulás nélkül (T/938 alapján várhatóan 2027-től megszűnik). `)
+    + `A ${yy(ev)}58-as bevallást negyedévente be kell adni (követő hó 12.), akkor is, ha a fizetendő nulla. `
+    + `Feltételezések: heti 36 órás munkaviszony mellett végzett tevékenység, ÁFA nélküli (nettó) bevétel, `
+    + `levonható HIPA-költség (anyag, alvállalkozó) nélkül. Nem számol SZJA-kedvezményekkel (pl. 25 év alattiak, családi kedvezmény), `
+    + `amelyek az átalányjövedelemre is érvényesíthetők. A HIPA-módszer választását egyeztesd a könyvelőddel. Nem minősül adótanácsadásnak.`;
 }
 
 // ============================================================
@@ -823,15 +1119,17 @@ function navXmlElonezet(havi, xmlEv, igHo, jovedelem, bevetelVissza, p) {
     ⚠ A NAV 2658 csak <strong>negyedéves</strong> adatot tartalmaz, havi bontást nem. A teljes negyedévi bevétel a negyedév utolsó hónapjába (${HOK_LONG[igHo-1]}) kerül. Pontos havi bontáshoz használd a Számlázz.hu CSV exportot.</div>`;
 
   if (!evEgyez) {
-    figyelem += `<div class="modal-err" style="margin-top:8px">Az XML <strong>${xmlEv}</strong>-es évhez tartozik, de most a <strong>${ev}</strong>. évet nézed. Válts évet a fejlécben az importhoz, vagy az adat rossz évbe kerül.</div>`;
+    figyelem += `<div class="modal-err" style="margin-top:8px">Az XML a(z) <strong>${xmlEv}</strong>. évhez tartozik, de most a <strong>${ev}</strong>. évet nézed. Válts évet a fejlécben, majd importáld újra.</div>`;
   }
 
   document.getElementById('csvModalSub').innerHTML = `Negyedéves bevallás feldolgozva.`;
   document.getElementById('csvModalBody').innerHTML = body + figyelem;
-  document.getElementById('csvModalActions').innerHTML = `
+  // Rossz évbe nem engedjük importálni
+  document.getElementById('csvModalActions').innerHTML = evEgyez ? `
     <button class="modal-btn ghost" onclick="csvModalBezar()">Mégse</button>
     <button class="modal-btn secondary" onclick="csvAlkalmaz('hozzaad')">Hozzáadás</button>
-    <button class="modal-btn primary" onclick="csvAlkalmaz('felulir')">Felülírás</button>`;
+    <button class="modal-btn primary" onclick="csvAlkalmaz('felulir')">Felülírás</button>`
+    : `<button class="modal-btn primary" onclick="csvModalBezar()">Bezárás</button>`;
   document.getElementById('csvModal').classList.add('visible');
 }
 
@@ -865,6 +1163,8 @@ function csvSzam(s) {
     t = t.replace(',', '.');
   }
   if ((t.match(/\./g) || []).length > 1) t = t.replace(/\./g, '');
+  // "12.500" -> ezres elválasztó (pénzösszegnél 3 tizedesjegy nem fordul elő)
+  else if (/^-?\d{1,3}\.\d{3}$/.test(t)) t = t.replace('.', '');
   const n = parseFloat(t);
   return isNaN(n) ? NaN : n;
 }
@@ -877,13 +1177,32 @@ function csvDatum(s) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-function csvOszlopIndex(header, kulcsok) {
-  for (let i = 0; i < header.length; i++) {
-    const h = header[i].toLowerCase();
-    if (kulcsok.some(k => h.includes(k))) return i;
+function csvOszlopIndex(header, kulcsok, kizar = []) {
+  // a kulcsok sorrendje prioritás: előbb az első kulcsra keresünk minden oszlopban
+  for (const k of kulcsok) {
+    for (let i = 0; i < header.length; i++) {
+      const h = header[i].toLowerCase();
+      if (h.includes(k) && !kizar.some(z => h.includes(z))) return i;
+    }
   }
   return -1;
 }
+
+// Olyan dátumoszlop, amelynek a kitöltött értékei többségében dátumok
+function csvDatumOszlop(kulcsok) {
+  const i = csvOszlopIndex(csvHeader, kulcsok);
+  if (i === -1) return -1;
+  const kitoltott = csvRawRows.filter(r => (r[i] || '').trim() !== '');
+  if (kitoltott.length === 0) return -1;
+  const jo = kitoltott.filter(r => csvDatum(r[i])).length;
+  return jo / kitoltott.length >= 0.8 ? i : -1;
+}
+
+// Szja tv.: az egyéni vállalkozó bevétele a jóváírás / kifizetés napján
+// keletkezik, ezért ha van kiegyenlítési dátum, azt használjuk.
+const CSV_FIZ_DATUM = ['kiegyenlítés', 'kiegyenlites', 'fizetés dátuma', 'fizetes datuma', 'fizetés napja', 'jóváírás', 'jovairas', 'fizetve'];
+const CSV_PENZNEM   = ['pénznem', 'penznem', 'deviza', 'valuta'];
+const CSV_ARFOLYAM  = ['árfolyam', 'arfolyam'];
 
 function csvFeldolgoz(txt) {
   txt = txt.replace(/^\uFEFF/, '');
@@ -900,10 +1219,15 @@ function csvFeldolgoz(txt) {
   csvHeader = header;
   csvRawRows = rows;
 
-  let dIdx = csvOszlopIndex(header, ['teljesítés', 'teljesites']);
+  let dIdx = csvDatumOszlop(CSV_FIZ_DATUM);
+  if (dIdx === -1) dIdx = csvOszlopIndex(header, ['teljesítés', 'teljesites']);
   if (dIdx === -1) dIdx = csvOszlopIndex(header, ['kelt', 'számla kelte', 'szamla kelte']);
 
-  let aIdx = csvOszlopIndex(header, ['bruttó', 'brutto', 'végösszeg', 'vegosszeg', 'fizetendő', 'fizetendo']);
+  // Az átalányadó bevétele ÁFA nélküli: a nettó összeg az elsődleges
+  // (alanyi mentesség vagy fordított adózás esetén nettó = bruttó).
+  let aIdx = csvOszlopIndex(header,
+    ['nettó', 'netto', 'bruttó', 'brutto', 'végösszeg', 'vegosszeg', 'fizetendő', 'fizetendo'],
+    ['áfa', 'afa', 'egységár', 'egysegar']);
 
   if (dIdx === -1 || aIdx === -1) {
     return csvOszlopValaszto(dIdx, aIdx);
@@ -921,7 +1245,7 @@ function csvOszlopValaszto(dElore, aElore) {
       <select id="csvDIdx">${opts}</select>
     </div>
     <div class="col-pick">
-      <label>Bruttó / végösszeg oszlop</label>
+      <label>Nettó összeg oszlop (ÁFA nélkül)</label>
       <select id="csvAIdx">${opts}</select>
     </div>`;
   document.getElementById('csvModalSub').textContent = '';
@@ -936,12 +1260,22 @@ function csvOszlopValaszto(dElore, aElore) {
 
 function csvAggregal(dIdx, aIdx) {
   const havi = Array(12).fill(0);
-  let db = 0, hibas = 0, evMas = 0;
+  let db = 0, hibas = 0, evMas = 0, deviza = 0, devizaArfNelkul = 0;
+  const pIdx = csvOszlopIndex(csvHeader, CSV_PENZNEM);
+  const rIdx = csvOszlopIndex(csvHeader, CSV_ARFOLYAM);
   csvRawRows.forEach(r => {
     const d = csvDatum(r[dIdx]);
-    const n = csvSzam(r[aIdx]);
+    let n = csvSzam(r[aIdx]);
     if (!d || isNaN(n)) { hibas++; return; }
     if (d.getFullYear() !== ev) { evMas++; return; }
+    // Devizás számla: forintra váltás a számlán szereplő árfolyammal
+    const penznem = pIdx > -1 ? String(r[pIdx] || '').trim().toUpperCase() : '';
+    if (penznem && !['HUF', 'FT', 'FORINT'].includes(penznem)) {
+      const arf = rIdx > -1 ? csvSzam(r[rIdx]) : NaN;
+      if (!(arf > 0)) { devizaArfNelkul++; return; }
+      n = n * arf;
+      deviza++;
+    }
     havi[d.getMonth()] += n;
     db++;
   });
@@ -949,14 +1283,17 @@ function csvAggregal(dIdx, aIdx) {
   if (db === 0) {
     return csvHiba(`Egyetlen ${ev}. évi számlasort sem sikerült feldolgozni. `
       + (evMas ? `(${evMas} sor más évhez tartozik. Válts évet a fejlécben, ha másik évet importálnál.) ` : '')
+      + (devizaArfNelkul ? `(${devizaArfNelkul} devizás sornál nincs árfolyam.) ` : '')
       + 'Ellenőrizd, hogy a megfelelő oszlopokat választottad-e.');
   }
 
   csvParsedRows = havi;
-  csvElonezet(havi, db, hibas, evMas);
+  csvElonezet(havi, db, hibas, evMas, {
+    datumOszlop: csvHeader[dIdx], osszegOszlop: csvHeader[aIdx], deviza, devizaArfNelkul
+  });
 }
 
-function csvElonezet(havi, db, hibas, evMas) {
+function csvElonezet(havi, db, hibas, evMas, info = {}) {
   const ossz = havi.reduce((s, x) => s + x, 0);
   const erintett = havi.filter(x => x > 0).length;
 
@@ -966,8 +1303,11 @@ function csvElonezet(havi, db, hibas, evMas) {
 
   document.getElementById('csvModalSub').innerHTML =
     `<strong>${db} számla</strong> feldolgozva (${ev}), ${erintett} hónapra, összesen <strong>${fmt(ossz)}</strong>.`
-    + (hibas ? `<br>${hibas} sort kihagytunk (hiányzó dátum/összeg).` : '')
-    + (evMas ? `<br>${evMas} sor más évhez tartozik, ezeket kihagytuk.` : '');
+    + (hibas ? `<br>${hibas} sort kihagytunk (hiányzó dátum/összeg — pl. még ki nem fizetett számla).` : '')
+    + (evMas ? `<br>${evMas} sor más évhez tartozik, ezeket kihagytuk.` : '')
+    + (info.datumOszlop ? `<br>Dátum: <strong>${info.datumOszlop}</strong> · Összeg: <strong>${info.osszegOszlop}</strong>` : '')
+    + (info.deviza ? `<br>${info.deviza} devizás számlát a számlán szereplő árfolyammal váltottunk forintra.` : '')
+    + (info.devizaArfNelkul ? `<br><strong>${info.devizaArfNelkul} devizás számlát kihagytunk, mert nincs mellette árfolyam</strong> — ezeket kézzel vidd fel.` : '');
 
   document.getElementById('csvModalBody').innerHTML = sorok || '<div class="modal-sub">Nincs megjeleníthető hónap.</div>';
 
